@@ -63,9 +63,9 @@ export default function OrderPage() {
   const whatsappUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola, soy del pedido #${order.id_pedido}.`)}` : '#';
   const assignmentStatus = repartidor?.estado_asignacion;
   const restaurantAccepted = !['pendiente', 'cancelado'].includes(order.estado_nombre);
-  const deliveryAssigned = ['aceptado', 'en_camino', 'entregado'].includes(assignmentStatus);
-  const deliveryOnWay = order.estado_nombre === 'en_camino' || ['en_camino', 'entregado'].includes(assignmentStatus);
-  const delivered = order.estado_nombre === 'entregado' || assignmentStatus === 'entregado';
+  const deliveryAssigned = ['aceptada', 'en_camino', 'entregada'].includes(assignmentStatus);
+  const deliveryOnWay = order.estado_nombre === 'en_camino' || ['en_camino', 'entregada'].includes(assignmentStatus);
+  const delivered = order.estado_nombre === 'entregado' || assignmentStatus === 'entregada';
   const canCancel = order.estado_nombre === 'pendiente';
   const handleCancel = async () => {
     try {
@@ -92,7 +92,7 @@ export default function OrderPage() {
     },
     {
       label: 'En camino',
-      detail: deliveryOnWay ? `Destino: ${order.direccion_entrega || 'Campus UIDE'}.` : 'El repartidor aun no ha salido.',
+      detail: deliveryOnWay ? `Destino: ${order.nombre_lugar_entrega}.` : 'El repartidor aun no ha salido.',
       icon: PackageCheck,
       done: deliveryOnWay
     },
@@ -148,8 +148,8 @@ export default function OrderPage() {
           <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-2 gap-y-3 text-sm text-stone-600">
             <dt className="font-black">Restaurante:</dt><dd>{order.tienda_nombre}</dd>
             <dt className="font-black">Producto:</dt><dd>{order.items?.map((item) => item.nombre).join(', ')}</dd>
-            <dt className="font-black">Entrega:</dt><dd>{order.direccion_entrega}</dd>
-            <dt className="font-black">Envio:</dt><dd>{formatCurrency(order.costo_envio || 0)}</dd>
+            <dt className="font-black">Entrega:</dt><dd>{order.nombre_lugar_entrega}{order.referencia_entrega ? ` - ${order.referencia_entrega}` : ''}</dd>
+            <dt className="font-black">Descuento:</dt><dd>{formatCurrency(order.total_descuento || 0)}</dd>
             <dt className="font-black">Total:</dt><dd>{formatCurrency(order.total || 0)}</dd>
           </dl>
           {phone && (

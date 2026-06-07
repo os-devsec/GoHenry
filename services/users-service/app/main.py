@@ -75,7 +75,7 @@ def store_memberships(connection: sqlite3.Connection, id_usuario: int) -> list[d
 def public_user(connection: sqlite3.Connection, user: dict[str, Any]) -> dict[str, Any]:
     data = dict(user)
     data.pop("password_hash", None)
-    data.setdefault("rol_sistema", "cliente")
+    data.setdefault("rol_usuario", "cliente")
     data["tiendas"] = store_memberships(connection, data["id_usuario"])
     return data
 
@@ -101,7 +101,7 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
 
 
 def is_platform_admin(user: dict[str, Any]) -> bool:
-    return user.get("rol_sistema") == "admin_plataforma"
+    return user.get("rol_usuario") == "admin_plataforma"
 
 
 def require_platform_admin(user: dict[str, Any]) -> None:
@@ -117,7 +117,6 @@ class AccountUpdateRequest(BaseModel):
     nombre: str
     apellido: str
     telefono: str
-    direccion: str | None = None
     password: str | None = None
 
 
@@ -153,7 +152,7 @@ def list_users(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, A
     require_platform_admin(user)
     with db() as connection:
         rows = connection.execute(
-            "SELECT id_usuario, nombre, apellido, correo, telefono, rol_sistema, acepta_repartos, estado FROM usuario"
+            "SELECT id_usuario, nombre, apellido, correo, telefono, rol_usuario, acepta_repartos, estado FROM usuario"
         ).fetchall()
     return [row_to_dict(row) for row in rows]
 
@@ -191,7 +190,7 @@ def create_or_get_internal_user(
 
         cursor = connection.execute(
             """
-            INSERT INTO usuario (nombre, apellido, correo, telefono, password_hash, rol_sistema, acepta_repartos, estado)
+            INSERT INTO usuario (nombre, apellido, correo, telefono, password_hash, rol_usuario, acepta_repartos, estado)
             VALUES (?, ?, ?, ?, ?, 'cliente', 0, 1)
             """,
             (
@@ -214,7 +213,7 @@ def create_platform_admin(payload: PlatformAdminRequest, user: dict[str, Any] = 
         existing = connection.execute("SELECT * FROM usuario WHERE correo = ?", (payload.correo,)).fetchone()
         if existing:
             connection.execute(
-                "UPDATE usuario SET rol_sistema = 'admin_plataforma', estado = 1 WHERE correo = ?",
+                "UPDATE usuario SET rol_usuario = 'admin_plataforma', estado = 1 WHERE correo = ?",
                 (payload.correo,),
             )
             id_usuario = existing["id_usuario"]
@@ -234,7 +233,7 @@ def create_platform_admin(payload: PlatformAdminRequest, user: dict[str, Any] = 
             cursor = connection.execute(
                 """
                 INSERT INTO usuario
-                (nombre, apellido, correo, telefono, password_hash, rol_sistema, acepta_repartos, estado)
+                (nombre, apellido, correo, telefono, password_hash, rol_usuario, acepta_repartos, estado)
                 VALUES (?, ?, ?, ?, ?, 'admin_plataforma', 0, 1)
                 """,
                 (
@@ -270,7 +269,7 @@ def get_user_by_email(correo: EmailStr, user: dict[str, Any] = Depends(current_u
     require_platform_admin(user)
     with db() as connection:
         row = connection.execute(
-            "SELECT id_usuario, nombre, apellido, correo, telefono, rol_sistema, acepta_repartos, estado FROM usuario WHERE correo = ?",
+            "SELECT id_usuario, nombre, apellido, correo, telefono, rol_usuario, acepta_repartos, estado FROM usuario WHERE correo = ?",
             (correo,),
         ).fetchone()
     found = row_to_dict(row)
@@ -330,14 +329,13 @@ def update_account(
             connection.execute(
                 """
                 UPDATE usuario
-                SET nombre = ?, apellido = ?, telefono = ?, direccion = ?, password_hash = ?
+                SET nombre = ?, apellido = ?, telefono = ?, password_hash = ?
                 WHERE id_usuario = ?
                 """,
                 (
                     payload.nombre.strip(),
                     payload.apellido.strip(),
                     payload.telefono.strip(),
-                    payload.direccion.strip() if payload.direccion else None,
                     hash_password(payload.password),
                     id_usuario,
                 ),
@@ -346,14 +344,13 @@ def update_account(
             connection.execute(
                 """
                 UPDATE usuario
-                SET nombre = ?, apellido = ?, telefono = ?, direccion = ?
+                SET nombre = ?, apellido = ?, telefono = ?
                 WHERE id_usuario = ?
                 """,
                 (
                     payload.nombre.strip(),
                     payload.apellido.strip(),
                     payload.telefono.strip(),
-                    payload.direccion.strip() if payload.direccion else None,
                     id_usuario,
                 ),
             )

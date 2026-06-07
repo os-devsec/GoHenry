@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEffect, useState } from 'react';
-import { Bike, Clock3, Mail, MapPin, Pencil, Phone, Save, User, X } from 'lucide-react';
+import { Bike, Clock3, Mail, Pencil, Phone, Save, User, X } from 'lucide-react';
 import { api } from '../api.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { formatCurrency } from '../utils/format.ts';
@@ -16,7 +16,6 @@ export default function UserPage() {
     nombre: currentUser?.nombre || '',
     apellido: currentUser?.apellido || '',
     telefono: currentUser?.telefono || '',
-    direccion: currentUser?.direccion || '',
     password: ''
   });
   const user = currentUser;
@@ -30,7 +29,7 @@ export default function UserPage() {
   }, [user?.id_usuario]);
 
   if (!user) return null;
-  const systemRole = user.rol_sistema === 'admin_plataforma' ? 'Admin plataforma' : 'Cliente institucional';
+  const systemRole = user.rol_usuario === 'admin_plataforma' ? 'Admin plataforma' : 'Cliente institucional';
   const saveAccount = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -64,7 +63,6 @@ export default function UserPage() {
             <label className="block text-sm font-bold text-stone-700">Nombre<input className="field mt-1" value={form.nombre} onChange={(event) => setForm({ ...form, nombre: event.target.value })} /></label>
             <label className="block text-sm font-bold text-stone-700">Apellido<input className="field mt-1" value={form.apellido} onChange={(event) => setForm({ ...form, apellido: event.target.value })} /></label>
             <label className="block text-sm font-bold text-stone-700">Telefono<input className="field mt-1" value={form.telefono} onChange={(event) => setForm({ ...form, telefono: event.target.value })} /></label>
-            <label className="block text-sm font-bold text-stone-700">Direccion<input className="field mt-1" value={form.direccion} onChange={(event) => setForm({ ...form, direccion: event.target.value })} /></label>
             <label className="block text-sm font-bold text-stone-700">Nueva contrasena<input className="field mt-1" type="password" minLength={6} placeholder="Dejar vacio para conservarla" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
             <div className="flex gap-2">
               <button type="submit" disabled={saving} className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-wine-600 px-4 py-2 font-black text-white"><Save size={16} /> Guardar</button>
@@ -76,7 +74,6 @@ export default function UserPage() {
             <address className="mt-5 space-y-3 text-sm not-italic text-stone-600">
               <Info icon={<Mail size={17} />} text={user.correo} />
               <Info icon={<Phone size={17} />} text={user.telefono} />
-              <Info icon={<MapPin size={17} />} text={user.direccion || 'Sin direccion registrada'} />
             </address>
             <button type="button" onClick={() => setEditing(true)} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-stone-100 px-5 py-3 font-black text-wine-800">
               <Pencil size={17} /> Editar mi cuenta
@@ -119,8 +116,8 @@ export default function UserPage() {
                 {expandedOrderId === order.id_pedido && (
                   <div className="mt-4 border-t border-stone-100 pt-4">
                     <dl className="grid gap-2 text-sm text-stone-600 sm:grid-cols-[auto_1fr]">
-                      <dt className="font-black">Entrega:</dt><dd>{order.direccion_entrega || 'Campus UIDE'}</dd>
-                      <dt className="font-black">Envio:</dt><dd>{formatCurrency(order.costo_envio || 0)}</dd>
+                      <dt className="font-black">Entrega:</dt><dd>{order.nombre_lugar_entrega}{order.referencia_entrega ? ` - ${order.referencia_entrega}` : ''}</dd>
+                      <dt className="font-black">Descuento:</dt><dd>{formatCurrency(order.total_descuento || 0)}</dd>
                       <dt className="font-black">Subtotal:</dt><dd>{formatCurrency(order.subtotal || 0)}</dd>
                     </dl>
                     <ul className="mt-4 space-y-2 rounded-lg bg-stone-50 p-3 text-sm">

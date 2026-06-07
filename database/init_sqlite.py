@@ -49,7 +49,7 @@ def seed_initial_admin(connection: sqlite3.Connection) -> None:
     existing = connection.execute("SELECT id_usuario FROM usuario WHERE correo = ?", (ADMIN_EMAIL,)).fetchone()
     if existing:
         connection.execute(
-            "UPDATE usuario SET rol_sistema = 'admin_plataforma', estado = 1 WHERE correo = ?",
+            "UPDATE usuario SET rol_usuario = 'admin_plataforma', estado = 1 WHERE correo = ?",
             (ADMIN_EMAIL,),
         )
         return
@@ -57,7 +57,7 @@ def seed_initial_admin(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
         INSERT INTO usuario
-        (nombre, apellido, correo, telefono, password_hash, rol_sistema, acepta_repartos, estado)
+        (nombre, apellido, correo, telefono, password_hash, rol_usuario, acepta_repartos, estado)
         VALUES ('Admin', 'Plataforma', ?, '0990000000', ?, 'admin_plataforma', 0, 1)
         """,
         (ADMIN_EMAIL, hash_password(ADMIN_PASSWORD)),

@@ -32,16 +32,16 @@ export const api = {
   upload: (path: string, formData: FormData) => request(path, { method: 'POST', body: formData })
 };
 
-export function productImageUrl(rutaImagen?: string) {
-  if (!rutaImagen) return '';
-  if (rutaImagen.startsWith('http')) return rutaImagen;
-  const fileName = rutaImagen.split('/').pop();
+export function productImageUrl(imagenUrl?: string) {
+  if (!imagenUrl) return '';
+  if (imagenUrl.startsWith('http')) return imagenUrl;
+  const fileName = imagenUrl.split('/').pop();
   return `${API_URL}/api/v1/productos/imagenes/${fileName}`;
 }
 
-export function storeLogoUrl(rutaLogo?: string) {
-  if (!rutaLogo) return '';
-  if (rutaLogo.startsWith('http')) return rutaLogo;
-  const fileName = rutaLogo.split('/').pop();
+export function storeLogoUrl(logoUrl?: string) {
+  if (!logoUrl) return '';
+  if (logoUrl.startsWith('http')) return logoUrl;
+  const fileName = logoUrl.split('/').pop();
   return `${API_URL}/api/v1/tiendas/logos/${fileName}`;
 }

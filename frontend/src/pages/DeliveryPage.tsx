@@ -26,7 +26,7 @@ export default function DeliveryPage() {
   }, [currentUser?.id_usuario, isPlatformAdmin]);
 
   const updateOrderStatus = async (assignmentId, status) => {
-    if (status === 'aceptado') {
+    if (status === 'aceptada') {
       await api.patch(`/api/v1/asignaciones-repartidor/${assignmentId}/aceptar`, {});
     }
     if (status === 'rechazado') {
@@ -49,9 +49,9 @@ export default function DeliveryPage() {
     .filter((assignment) => assignment.estado_asignacion === 'pendiente')
     .map(mapIncomingAssignment);
   const deliveryOrders = assignments
-    .filter((assignment) => ['aceptado', 'en_camino'].includes(assignment.estado_asignacion))
+    .filter((assignment) => ['aceptada', 'en_camino'].includes(assignment.estado_asignacion))
     .map(mapActiveAssignment);
-  const deliveredCount = assignments.filter((assignment) => assignment.estado_asignacion === 'entregado').length;
+  const deliveredCount = assignments.filter((assignment) => assignment.estado_asignacion === 'entregada').length;
 
   return (
     <div className="space-y-6">
@@ -85,7 +85,7 @@ export default function DeliveryPage() {
                 order={order}
                 acceptLabel="Aceptar entrega"
                 showReject={false}
-                onAccept={(orderId) => updateOrderStatus(orderId, 'aceptado')}
+                onAccept={(orderId) => updateOrderStatus(orderId, 'aceptada')}
               />
             </li>
           ))}
@@ -112,7 +112,7 @@ function mapIncomingAssignment(assignment) {
     code: `Pedido #${assignment.id_pedido}`,
     title: 'Asignacion de entrega',
     customer: 'Disponible para repartidores activos',
-    location: `Retiro: ${assignment.tienda_nombre} / Entrega: ${assignment.direccion_entrega}`,
+    location: `Retiro: ${assignment.tienda_nombre} / Entrega: ${assignment.punto_entrega}${assignment.referencia_entrega ? ` - ${assignment.referencia_entrega}` : ''}`,
     time: 'Pendiente',
     status: assignment.estado_asignacion,
     total: assignment.total,
@@ -128,7 +128,7 @@ function mapActiveAssignment(assignment) {
     restaurant: assignment.tienda_nombre,
     customer: `Pedido #${assignment.id_pedido}`,
     pickup: `Recoger en ${assignment.tienda_nombre}`,
-    dropoff: assignment.direccion_entrega,
+    dropoff: [assignment.punto_entrega, assignment.referencia_entrega].filter(Boolean).join(' - '),
     clientName: assignment.cliente,
     clientPhone: assignment.telefono_cliente,
     orderId: assignment.id_pedido,

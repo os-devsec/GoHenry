@@ -20,7 +20,7 @@ export default function IncomingOrderCard({
   totalLabel = 'Total'
 }: IncomingOrderCardProps) {
   const isPending = order.status === 'pendiente';
-  const isAccepted = ['aceptado', 'preparando', 'listo_para_entrega'].includes(order.status);
+  const isAccepted = ['aceptado', 'en_preparacion', 'listo_para_entrega'].includes(order.status);
   const isRejected = ['rechazado', 'cancelado'].includes(order.status);
 
   return (
@@ -88,7 +88,7 @@ function StatusBadge({ status }) {
   const styles = {
     pendiente: 'bg-maize-100 text-wine-900',
     aceptado: 'bg-emerald-100 text-emerald-800',
-    preparando: 'bg-emerald-100 text-emerald-800',
+    en_preparacion: 'bg-emerald-100 text-emerald-800',
     listo_para_entrega: 'bg-sky-100 text-sky-800',
     rechazado: 'bg-stone-200 text-stone-600',
     cancelado: 'bg-stone-200 text-stone-600'

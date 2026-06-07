@@ -15,6 +15,7 @@ SERVICE_ROUTES = [
     ("/api/v1/carritos", os.getenv("CART_SERVICE_URL", "http://cart-service:8000")),
     ("/api/v1/pedidos", os.getenv("ORDERS_SERVICE_URL", "http://orders-service:8000")),
     ("/api/v1/estados-pedido", os.getenv("ORDERS_SERVICE_URL", "http://orders-service:8000")),
+    ("/api/v1/ubicaciones", os.getenv("ORDERS_SERVICE_URL", "http://orders-service:8000")),
     ("/api/v1/pagos", os.getenv("PAYMENTS_SERVICE_URL", "http://payments-service:8000")),
     ("/api/v1/metodos-pago", os.getenv("PAYMENTS_SERVICE_URL", "http://payments-service:8000")),
     ("/api/v1/comisiones", os.getenv("PAYMENTS_SERVICE_URL", "http://payments-service:8000")),
@@ -42,8 +43,6 @@ def target_for(path: str) -> str | None:
     if path.startswith("/api/v1/tiendas/") and path.endswith("/productos"):
         return os.getenv("CATALOG_SERVICE_URL", "http://catalog-service:8000")
     if path.startswith("/api/v1/pedidos/") and path.endswith("/pago"):
-        return os.getenv("PAYMENTS_SERVICE_URL", "http://payments-service:8000")
-    if path.startswith("/api/v1/pedidos/") and path.endswith("/comision"):
         return os.getenv("PAYMENTS_SERVICE_URL", "http://payments-service:8000")
     for prefix, url in SERVICE_ROUTES:
         if path.startswith(prefix):

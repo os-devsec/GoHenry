@@ -8,7 +8,7 @@ async function optionalProducts(stores = [], user = null) {
   const load = async () => {
     const publicProducts = await api.get('/api/v1/productos').catch(() => []);
     const memberships = user?.tiendas || [];
-    const storeIds = user?.rol_sistema === 'admin_plataforma'
+    const storeIds = user?.rol_usuario === 'admin_plataforma'
       ? stores.map((store) => store.id_tienda)
       : memberships.map((membership) => membership.id_tienda);
 
@@ -84,7 +84,7 @@ export function AppProvider({ children }) {
             stock: product.stock,
             discount,
             available: product.estado,
-            image: productImageUrl(product.ruta_imagen) || foodImage
+            image: productImageUrl(product.imagen_url) || foodImage
           };
           });
 
@@ -100,7 +100,7 @@ export function AppProvider({ children }) {
           horario_cierre: store.horario_cierre || '18:00',
           locationText: [store.nombre_lugar, store.referencia].filter(Boolean).join(' '),
           image: foodImage,
-          logo: storeLogoUrl(store.ruta_logo) || logoImage,
+          logo: storeLogoUrl(store.logo_url) || logoImage,
           tags: [store.nombre_lugar || 'Campus', store.horario_apertura || '08:00'],
           menu
         };
@@ -329,7 +329,7 @@ export function AppProvider({ children }) {
     localStorage.removeItem('lastOrder');
   };
 
-  const checkout = async (direccion_entrega) => {
+  const checkout = async (ubicacionEntrega) => {
     if (!cart.length) return null;
     if (!currentUser) throw new Error('Inicia sesion para crear pedidos');
     const user = currentUser;
@@ -337,7 +337,7 @@ export function AppProvider({ children }) {
       id_usuario: user.id_usuario,
       id_tienda: cart[0].restaurantId || cart[0].id_tienda || 1,
       tipo_pedido: 'delivery',
-      direccion_entrega,
+      ...ubicacionEntrega,
       items: cart.map((item) => ({
         id_producto: item.id_producto || item.id,
         cantidad: item.quantity
@@ -350,9 +350,11 @@ export function AppProvider({ children }) {
   };
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => sum + item.originalPrice * item.quantity, 0);
+  const totalDiscount = subtotal - total;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const storeMemberships = currentUser?.tiendas || [];
-  const isPlatformAdmin = currentUser?.rol_sistema === 'admin_plataforma';
+  const isPlatformAdmin = currentUser?.rol_usuario === 'admin_plataforma';
   const managedRestaurants = isPlatformAdmin
     ? restaurants
     : restaurants.filter((restaurant) => storeMemberships.some((membership) => membership.id_tienda === restaurant.id_tienda));
@@ -365,6 +367,8 @@ export function AppProvider({ children }) {
       restaurants,
       cart,
       total,
+      subtotal,
+      totalDiscount,
       cartCount,
       loading,
       apiError,
@@ -402,7 +406,7 @@ export function AppProvider({ children }) {
       refreshCurrentUser,
       setLastOrder
     }),
-    [restaurants, cart, total, cartCount, loading, apiError, currentUser, lastOrder]
+    [restaurants, cart, total, subtotal, totalDiscount, cartCount, loading, apiError, currentUser, lastOrder]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

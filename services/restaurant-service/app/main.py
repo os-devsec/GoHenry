@@ -78,7 +78,7 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
 
 
 def is_platform_admin(user: dict[str, Any]) -> bool:
-    return user.get("rol_sistema") == "admin_plataforma"
+    return user.get("rol_usuario") == "admin_plataforma"
 
 
 def require_platform_admin(user: dict[str, Any]) -> None:
@@ -108,7 +108,7 @@ def require_store_role(connection: sqlite3.Connection, id_tienda: int, user: dic
 class TiendaRequest(BaseModel):
     nombre: str
     sucursal: str | None = "Campus UIDE"
-    ruta_logo: str | None = None
+    logo_url: str | None = None
     nombre_lugar: str = "Campus UIDE"
     referencia: str | None = None
     horario_apertura: str = "08:00"
@@ -182,14 +182,14 @@ def create_store(payload: TiendaRequest, user: dict[str, Any] = Depends(current_
         )
         cursor = connection.execute(
             """
-            INSERT INTO tienda (id_ubicacion, nombre, sucursal, ruta_logo, horario_apertura, horario_cierre, estado)
+            INSERT INTO tienda (id_ubicacion, nombre, sucursal, logo_url, horario_apertura, horario_cierre, estado)
             VALUES (?, ?, ?, ?, ?, ?, 1)
             """,
             (
                 location.lastrowid,
                 payload.nombre,
                 payload.sucursal,
-                payload.ruta_logo,
+                payload.logo_url,
                 payload.horario_apertura,
                 payload.horario_cierre,
             ),
@@ -280,7 +280,7 @@ async def upload_store_logo(
         destination.write_bytes(content)
 
         relative = f"uploads/stores/{file_name}"
-        connection.execute("UPDATE tienda SET ruta_logo = ? WHERE id_tienda = ?", (relative, id_tienda))
+        connection.execute("UPDATE tienda SET logo_url = ? WHERE id_tienda = ?", (relative, id_tienda))
         connection.commit()
         row = connection.execute("SELECT * FROM tienda WHERE id_tienda = ?", (id_tienda,)).fetchone()
     return row_to_dict(row)
@@ -292,7 +292,7 @@ def list_store_staff(id_tienda: int, user: dict[str, Any] = Depends(current_user
         require_store_role(connection, id_tienda, user, {"administrador", "empleado"})
         rows = connection.execute(
             """
-            SELECT tu.*, u.nombre, u.apellido, u.correo, u.telefono, u.rol_sistema
+            SELECT tu.*, u.nombre, u.apellido, u.correo, u.telefono, u.rol_usuario
             FROM tienda_usuario tu
             JOIN usuario u ON u.id_usuario = tu.id_usuario
             WHERE tu.id_tienda = ? AND tu.estado = 1
@@ -342,7 +342,7 @@ def add_store_staff(
         connection.commit()
         row = connection.execute(
             """
-            SELECT tu.*, u.nombre, u.apellido, u.correo, u.telefono, u.rol_sistema
+            SELECT tu.*, u.nombre, u.apellido, u.correo, u.telefono, u.rol_usuario
             FROM tienda_usuario tu
             JOIN usuario u ON u.id_usuario = tu.id_usuario
             WHERE tu.id_tienda_usuario = ?

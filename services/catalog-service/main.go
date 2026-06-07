@@ -135,7 +135,7 @@ func productRows(query string, args ...any) ([]gin.H, error) {
 			"descuento_porcentaje": descuento,
 			"descuento_inicio":     inicio.String,
 			"descuento_fin":        fin.String,
-			"ruta_imagen":          imagen.String,
+			"imagen_url":           imagen.String,
 			"estado":               strings.EqualFold(estado, "TRUE"),
 			"tienda_nombre":        tienda,
 			"categorias":           categorias,
@@ -367,7 +367,7 @@ func uploadProductImage(ctx *gin.Context) {
 	}
 	defer out.Close()
 	io.Copy(out, file)
-	database.Exec("UPDATE producto SET ruta_imagen = ? WHERE id_producto = ?", relative, ctx.Param("id"))
+	database.Exec("UPDATE producto SET imagen_url = ? WHERE id_producto = ?", relative, ctx.Param("id"))
 	getProduct(ctx)
 }
 
@@ -445,7 +445,7 @@ func currentUser(ctx *gin.Context) (map[string]any, bool) {
 }
 
 func hasStoreRole(storeID int, user map[string]any, roles []string) bool {
-	if role, _ := user["rol_sistema"].(string); role == "admin_plataforma" {
+	if role, _ := user["rol_usuario"].(string); role == "admin_plataforma" {
 		return true
 	}
 	userID := intFromAny(user["id_usuario"])

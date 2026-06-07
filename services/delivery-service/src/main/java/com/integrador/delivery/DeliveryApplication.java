@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -90,7 +91,7 @@ public class DeliveryApplication {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Pedido requerido");
         }
         Map<String, Object> pedido = jdbc.queryForMap(
-                "SELECT p.id_tienda, ep.nombre AS estado " +
+                "SELECT p.id_tienda, p.tipo_pedido, ep.nombre AS estado " +
                         "FROM pedido p JOIN estado_pedido ep ON ep.id_estado_pedido = p.id_estado_pedido " +
                         "WHERE p.id_pedido = ?",
                 idPedido
@@ -98,12 +99,15 @@ public class DeliveryApplication {
         if (!isPlatformAdmin(user) && !hasStoreRole(intValue(pedido.get("id_tienda"), 0), user)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo la tienda puede solicitar delivery");
         }
+        if (!"delivery".equals(stringValue(pedido.get("tipo_pedido"), ""))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Los pedidos pickup no requieren repartidor");
+        }
         String estadoPedido = stringValue(pedido.get("estado"), "");
         if (set("pendiente", "cancelado", "rechazado", "entregado").contains(estadoPedido)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "El pedido aun no esta listo para asignar delivery");
         }
         List<Map<String, Object>> existing = jdbc.queryForList(
-                "SELECT id_asignacion FROM asignacion_repartidor WHERE id_pedido = ? AND estado_asignacion IN ('pendiente', 'aceptado', 'en_camino') ORDER BY id_asignacion DESC LIMIT 1",
+                "SELECT id_asignacion FROM asignacion_repartidor WHERE id_pedido = ? AND estado_asignacion IN ('pendiente', 'aceptada', 'en_camino') ORDER BY id_asignacion DESC LIMIT 1",
                 idPedido
         );
         if (!existing.isEmpty()) {
@@ -116,13 +120,14 @@ public class DeliveryApplication {
     }
 
     @PatchMapping("/api/v1/asignaciones-repartidor/{id}/aceptar")
+    @Transactional
     public Map<String, Object> aceptar(@PathVariable int id,
                                        @RequestHeader(value = "Authorization", required = false) String authorization) {
         Map<String, Object> user = currentUser(authorization);
         int idUsuario = claimDeliveryUser(id, user);
         int updated = jdbc.update(
                 "UPDATE asignacion_repartidor " +
-                        "SET id_usuario = ?, estado_asignacion = 'aceptado', fecha_aceptacion = CURRENT_TIMESTAMP " +
+                        "SET id_usuario = ?, estado_asignacion = 'aceptada', fecha_aceptacion = CURRENT_TIMESTAMP " +
                         "WHERE id_asignacion = ? " +
                         "AND estado_asignacion = 'pendiente' " +
                         "AND NOT EXISTS ( " +
@@ -130,7 +135,7 @@ public class DeliveryApplication {
                         "  FROM asignacion_repartidor other " +
                         "  WHERE other.id_pedido = asignacion_repartidor.id_pedido " +
                         "    AND other.id_asignacion <> asignacion_repartidor.id_asignacion " +
-                        "    AND other.estado_asignacion IN ('aceptado', 'en_camino', 'entregado') " +
+                        "    AND other.estado_asignacion IN ('aceptada', 'en_camino', 'entregada') " +
                         ")",
                 idUsuario,
                 id
@@ -138,6 +143,28 @@ public class DeliveryApplication {
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La entrega ya fue tomada o no esta pendiente");
         }
+        Map<String, Object> entrega = jdbc.queryForMap(
+                "SELECT ar.id_pedido, " +
+                        "COALESCE(ut.nombre_lugar, '') || ' ' || COALESCE(ut.referencia, '') AS ubicacion_tienda, " +
+                        "COALESCE(ue.nombre_lugar, '') || ' ' || COALESCE(ue.referencia, '') AS ubicacion_entrega " +
+                        "FROM asignacion_repartidor ar " +
+                        "JOIN pedido p ON p.id_pedido = ar.id_pedido " +
+                        "JOIN tienda t ON t.id_tienda = p.id_tienda " +
+                        "JOIN ubicacion ut ON ut.id_ubicacion = t.id_ubicacion " +
+                        "JOIN ubicacion ue ON ue.id_ubicacion = p.id_ubicacion_entrega " +
+                        "WHERE ar.id_asignacion = ?",
+                id
+        );
+        double monto = calcularComision(
+                stringValue(entrega.get("ubicacion_tienda"), ""),
+                stringValue(entrega.get("ubicacion_entrega"), "")
+        );
+        jdbc.update(
+                "INSERT INTO comision (id_usuario, id_pedido, monto, estado_comision) VALUES (?, ?, ?, 'pendiente')",
+                idUsuario,
+                intValue(entrega.get("id_pedido"), 0),
+                monto
+        );
         return asignacion(id);
     }
 
@@ -146,7 +173,7 @@ public class DeliveryApplication {
                                         @RequestHeader(value = "Authorization", required = false) String authorization) {
         requireAssignedDeliveryUser(id, currentUser(authorization));
         int updated = jdbc.update(
-                "UPDATE asignacion_repartidor SET estado_asignacion = 'en_camino' WHERE id_asignacion = ? AND estado_asignacion = 'aceptado'",
+                "UPDATE asignacion_repartidor SET estado_asignacion = 'en_camino' WHERE id_asignacion = ? AND estado_asignacion = 'aceptada'",
                 id
         );
         if (updated == 0) {
@@ -163,7 +190,7 @@ public class DeliveryApplication {
         requireAssignedDeliveryUser(id, currentUser(authorization));
         String observacion = body == null ? null : stringValue(body.get("observacion"), null);
         int updated = jdbc.update(
-                "UPDATE asignacion_repartidor SET estado_asignacion = 'cancelado', fecha_cancelacion = CURRENT_TIMESTAMP, observacion = ? WHERE id_asignacion = ? AND estado_asignacion IN ('pendiente', 'aceptado')",
+                "UPDATE asignacion_repartidor SET estado_asignacion = 'cancelada', fecha_cancelacion = CURRENT_TIMESTAMP, observacion = ? WHERE id_asignacion = ? AND estado_asignacion IN ('pendiente', 'aceptada')",
                 observacion,
                 id
         );
@@ -178,7 +205,7 @@ public class DeliveryApplication {
                                         @RequestHeader(value = "Authorization", required = false) String authorization) {
         requireAssignedDeliveryUser(id, currentUser(authorization));
         int updated = jdbc.update(
-                "UPDATE asignacion_repartidor SET estado_asignacion = 'entregado', fecha_entrega = CURRENT_TIMESTAMP WHERE id_asignacion = ? AND estado_asignacion = 'en_camino'",
+                "UPDATE asignacion_repartidor SET estado_asignacion = 'entregada', fecha_entrega = CURRENT_TIMESTAMP WHERE id_asignacion = ? AND estado_asignacion = 'en_camino'",
                 id
         );
         if (updated == 0) {
@@ -201,10 +228,10 @@ public class DeliveryApplication {
     private String baseSql() {
         return "SELECT v.id_asignacion, v.id_pedido, v.id_repartidor, v.repartidor, " +
                 "v.estado_asignacion, v.tipo_pedido, v.fecha_pedido, v.tienda, v.cliente, " +
-                "CASE WHEN v.estado_asignacion IN ('aceptado', 'en_camino') THEN v.telefono_cliente ELSE NULL END AS telefono_cliente, " +
+                "CASE WHEN v.estado_asignacion IN ('aceptada', 'en_camino') THEN v.telefono_cliente ELSE NULL END AS telefono_cliente, " +
                 "v.punto_entrega, v.referencia_entrega, v.subtotal, v.total_descuento, v.total, " +
                 "v.fecha_asignacion, v.fecha_aceptacion, v.fecha_entrega, v.observacion, " +
-                "v.repartidor AS nombre, '' AS apellido, v.referencia_entrega AS direccion_entrega, " +
+                "v.repartidor AS nombre, '' AS apellido, " +
                 "v.tienda AS tienda_nombre " +
                 "FROM V_Ordenes_Repartidor v";
     }
@@ -217,6 +244,15 @@ public class DeliveryApplication {
 
     private static String stringValue(Object value, String fallback) {
         return value == null ? fallback : String.valueOf(value);
+    }
+
+    private double calcularComision(String ubicacionTienda, String ubicacionEntrega) {
+        return esZonaEspecial(ubicacionTienda) && !esZonaEspecial(ubicacionEntrega) ? 1.0 : 0.5;
+    }
+
+    private boolean esZonaEspecial(String value) {
+        String text = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        return text.contains("automotriz") || text.contains("gastronomia");
     }
 
     private static Map<String, String> map(String k1, String v1, String k2, String v2) {
@@ -285,7 +321,7 @@ public class DeliveryApplication {
     }
 
     private boolean isPlatformAdmin(Map<String, Object> user) {
-        return "admin_plataforma".equals(stringValue(user.get("rol_sistema"), ""));
+        return "admin_plataforma".equals(stringValue(user.get("rol_usuario"), ""));
     }
 
     private static boolean boolValue(Object value) {

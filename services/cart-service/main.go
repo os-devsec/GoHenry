@@ -25,9 +25,11 @@ type ItemPayload struct {
 }
 
 type CheckoutPayload struct {
-	IDUsuario        int    `json:"id_usuario"`
-	DireccionEntrega string `json:"direccion_entrega"`
-	TipoPedido       string `json:"tipo_pedido"`
+	IDUsuario          int    `json:"id_usuario"`
+	IDUbicacionEntrega int    `json:"id_ubicacion_entrega"`
+	NombreLugar        string `json:"nombre_lugar"`
+	Referencia         string `json:"referencia"`
+	TipoPedido         string `json:"tipo_pedido"`
 }
 
 var database *sql.DB
@@ -170,11 +172,13 @@ func checkout(ctx *gin.Context) {
 	}
 	cart := cartMap(ctx.Param("id"))
 	body := gin.H{
-		"id_usuario": payload.IDUsuario,
-		"id_tienda": cart["id_tienda"],
-		"tipo_pedido": fallback(payload.TipoPedido, "delivery"),
-		"direccion_entrega": payload.DireccionEntrega,
-		"items": cart["items"],
+		"id_usuario":           payload.IDUsuario,
+		"id_tienda":            cart["id_tienda"],
+		"tipo_pedido":          fallback(payload.TipoPedido, "delivery"),
+		"id_ubicacion_entrega": payload.IDUbicacionEntrega,
+		"nombre_lugar":         payload.NombreLugar,
+		"referencia":           payload.Referencia,
+		"items":                cart["items"],
 	}
 	encoded, _ := json.Marshal(body)
 	ordersURL := os.Getenv("ORDERS_SERVICE_URL")
@@ -226,22 +230,22 @@ func cartMap(id any) gin.H {
 		total += subtotal
 		items = append(items, gin.H{
 			"id_detalle_carrito": itemID,
-			"id_producto": productID,
-			"nombre": name,
-			"cantidad": qty,
-			"precio_unitario": price,
-			"subtotal": subtotal,
+			"id_producto":        productID,
+			"nombre":             name,
+			"cantidad":           qty,
+			"precio_unitario":    price,
+			"subtotal":           subtotal,
 		})
 	}
 	return gin.H{
-		"id_carrito": cartID,
-		"id_usuario": userID,
-		"id_tienda": storeID,
-		"id_estado_carrito": statusID,
-		"fecha_creacion": created,
+		"id_carrito":          cartID,
+		"id_usuario":          userID,
+		"id_tienda":           storeID,
+		"id_estado_carrito":   statusID,
+		"fecha_creacion":      created,
 		"fecha_actualizacion": updated,
-		"items": items,
-		"total": total,
+		"items":               items,
+		"total":               total,
 	}
 }
 
@@ -295,7 +299,7 @@ func canUseCart(ctx *gin.Context, cartID any) bool {
 }
 
 func isPlatformAdmin(user map[string]any) bool {
-	role, _ := user["rol_sistema"].(string)
+	role, _ := user["rol_usuario"].(string)
 	return role == "admin_plataforma"
 }
 

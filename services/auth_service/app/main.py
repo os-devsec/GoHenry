@@ -90,7 +90,7 @@ def store_memberships(connection: sqlite3.Connection, id_usuario: int) -> list[d
 def public_user(connection: sqlite3.Connection, user: dict[str, Any]) -> dict[str, Any]:
     data = dict(user)
     data.pop("password_hash", None)
-    data.setdefault("rol_sistema", "cliente")
+    data.setdefault("rol_usuario", "cliente")
     data["tiendas"] = store_memberships(connection, data["id_usuario"])
     return data
 

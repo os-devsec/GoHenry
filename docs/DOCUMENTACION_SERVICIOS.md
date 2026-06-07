@@ -67,9 +67,9 @@ Las vistas agregadas centralizan consultas y reducen el acceso directo a tablas 
 
 | Vista | Uso |
 | --- | --- |
-| `V_Ordenes_Repartidor` | Lectura de asignaciones y datos de entrega para repartidor |
+| `V_Ordenes_Repartidor` | Lectura de asignaciones pendientes o aceptadas y datos de entrega |
 | `V_Actualizar_Estado_Pedido` | Vista actualizable para modificar solo `id_estado_pedido` |
-| `V_Ventas_Tiendas` | Reporte de ventas por tienda, solo pedidos `entregado` o `finalizado` |
+| `V_Ventas_Tiendas` | Reporte de ventas por tienda, solo pedidos `entregado` |
 | `V_Comisiones_Repartidores` | Resumen de comisiones por repartidor activo |
 | `V_Usuarios_Permisos` | Resumen de usuarios y permisos en formato `TRUE/FALSE` |
 | `V_Productos_Catalogo` | Catalogo publico, solo productos activos |
@@ -135,7 +135,7 @@ Rutas que enruta:
 | `/api/v1/productos` | Catalog Service |
 | `/api/v1/categorias` | Catalog Service |
 | `/api/v1/carritos` | Cart Service |
-| `/api/v1/pedidos` | Orders Service, Payments Service para pago/comision |
+| `/api/v1/pedidos` | Orders Service y Payments Service para pago |
 | `/api/v1/repartidores` | Delivery Service |
 | `/api/v1/asignaciones-repartidor` | Delivery Service |
 
@@ -221,7 +221,7 @@ Endpoints principales:
 | --- | --- | --- |
 | `GET` | `/api/v1/tiendas` | Lista tiendas activas |
 | `POST` | `/api/v1/tiendas` | Crea tienda, solo admin plataforma |
-| `POST` | `/api/v1/tiendas/{id}/logo` | Sube logo y guarda `ruta_logo` |
+| `POST` | `/api/v1/tiendas/{id}/logo` | Sube logo y guarda `logo_url` |
 | `GET` | `/api/v1/tiendas/{id}/personal` | Lista personal de tienda |
 | `POST` | `/api/v1/tiendas/{id}/personal` | Agrega personal |
 | `DELETE` | `/api/v1/tiendas/{id}/personal/{id_tienda_usuario}` | Desactiva personal |
@@ -342,11 +342,10 @@ Funciones principales:
 
 | Funcion | Descripcion |
 | --- | --- |
-| `crearPedido` | Normaliza items, calcula subtotal/envio y guarda pedido |
+| `crearPedido` | Resuelve la ubicacion, calcula subtotal bruto, descuentos y total, y guarda el pedido |
 | `actualizarEstado` | Convierte nombre de estado a id y actualiza la vista |
 | `basePedidoSql` | Consulta base de pedidos con cliente, tienda y estado |
-| `calcularCostoEnvio` | Devuelve 1.00 si la tienda esta en automotriz/gastronomia y la entrega no; caso contrario 0.50 |
-| `agregarCostoEnvioCalculado` | Conserva `costo_envio` del pedido y calcula fallback si hiciera falta |
+| `resolverUbicacionEntrega` | Usa una ubicacion existente o crea una nueva ubicacion de tipo `entrega` |
 | `items` | Devuelve detalle del pedido |
 | `asignacion` | Devuelve ultima asignacion de repartidor |
 
@@ -356,7 +355,7 @@ Estados iniciales:
 | ---: | --- |
 | 1 | `pendiente` |
 | 2 | `aceptado` |
-| 3 | `preparando` |
+| 3 | `en_preparacion` |
 | 4 | `listo_para_entrega` |
 | 5 | `en_camino` |
 | 6 | `entregado` |
@@ -383,7 +382,6 @@ Endpoints principales:
 | `GET` | `/api/v1/pedidos/{idPedido}/pago` | Obtiene pago por pedido |
 | `POST` | `/api/v1/pedidos/{idPedido}/pago` | Crea o reemplaza pago |
 | `GET` | `/api/v1/comisiones` | Lista comisiones |
-| `POST` | `/api/v1/pedidos/{idPedido}/comision` | Crea comision |
 
 Funciones principales:
 
@@ -391,7 +389,6 @@ Funciones principales:
 | --- | --- |
 | `crearPago` | Registra pago; si no llega monto usa total del pedido |
 | `pagoPorPedido` | Busca pago unico por pedido |
-| `crearComision` | Crea comision para repartidor |
 
 ## Delivery Service
 
@@ -403,7 +400,7 @@ services/delivery-service/src/main/java/com/integrador/delivery/DeliveryApplicat
 
 USP / responsabilidad diferencial:
 
-Administra asignaciones de repartidor. Lee asignaciones desde `V_Ordenes_Repartidor` y actualiza estado de pedido por `V_Actualizar_Estado_Pedido`.
+Administra asignaciones de repartidor. La asignacion se crea pendiente y sin usuario; al aceptarla se registra el repartidor y su comision fija dentro de la misma transaccion.
 
 Endpoints principales:
 
@@ -424,7 +421,7 @@ Funciones principales:
 | `disponibles` | Consulta usuarios con `acepta_repartos = 1` |
 | `asignacionesPorRepartidor` | Lee `V_Ordenes_Repartidor` filtrada por repartidor |
 | `crearAsignacion` | Inserta asignacion en tabla base |
-| `aceptar` | Marca asignacion aceptada y pedido en camino |
+| `aceptar` | Marca asignacion `aceptada` y crea la comision `pendiente` |
 | `cancelar` | Cancela asignacion |
 | `entregar` | Marca asignacion entregada y pedido entregado |
 | `actualizarPedido` | Actualiza pedido desde `V_Actualizar_Estado_Pedido` |
@@ -458,12 +455,12 @@ Logica relevante:
 ```mermaid
 flowchart LR
     A["Cliente crea pedido"] --> B["Orders Service inserta pedido y detalle"]
-    B --> C["Delivery Service crea asignacion"]
-    C --> D["Repartidor acepta"]
+    B --> C["Tienda solicita reparto y crea asignacion pendiente"]
+    C --> D["Repartidor acepta y se crea la comision"]
     D --> E["Delivery actualiza pedido a en_camino via vista"]
     E --> F["Repartidor entrega"]
     F --> G["Delivery actualiza pedido a entregado via vista"]
-    G --> H["Payments registra pago y comision"]
+    G --> H["Payments registra el pago"]
     G --> I["V_Ventas_Tiendas refleja venta"]
 ```
 
@@ -511,7 +508,7 @@ Prueba integrada por gateway:
 | Aceptar entrega | OK |
 | Entregar pedido | OK |
 | Registrar pago | OK |
-| Registrar comision | OK |
+| Crear comision al aceptar reparto | OK |
 | `V_Ventas_Tiendas` refleja venta entregada | OK |
 | `V_Ordenes_Repartidor` muestra entrega | OK |
 

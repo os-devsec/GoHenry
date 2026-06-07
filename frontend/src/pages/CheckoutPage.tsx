@@ -1,25 +1,40 @@
-import React from 'react';
-import { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, CreditCard, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import IconButton from '../components/common/IconButton.tsx';
 import SummaryRow from '../components/common/SummaryRow.tsx';
+import { api } from '../api.ts';
 import { useApp } from '../context/AppContext.tsx';
-import { calculateDeliveryFee } from '../utils/delivery.ts';
 import { formatCurrency } from '../utils/format.ts';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { cart, total, updateQuantity, checkout } = useApp();
-  const [address, setAddress] = useState('Edificio Marcelo Fernandez (Aulas), Aula 101 A');
+  const { cart, subtotal, totalDiscount, total, updateQuantity, checkout } = useApp();
+  const [locations, setLocations] = useState<any[]>([]);
+  const [locationMode, setLocationMode] = useState('existing');
+  const [locationId, setLocationId] = useState('');
+  const [placeName, setPlaceName] = useState('');
+  const [reference, setReference] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const delivery = cart.length ? calculateDeliveryFee(cart[0].restaurantLocation, address) : 0;
-  const finalTotal = total + delivery;
+
+  useEffect(() => {
+    api.get('/api/v1/ubicaciones?tipo=entrega')
+      .then((data) => {
+        setLocations(data);
+        if (data.length) setLocationId(String(data[0].id_ubicacion));
+        else setLocationMode('new');
+      })
+      .catch(() => setLocationMode('new'));
+  }, []);
 
   const confirmOrder = async () => {
     if (!cart.length) return;
+    if (locationMode === 'existing' && !locationId) return;
+    if (locationMode === 'new' && !placeName.trim()) return;
     setSubmitting(true);
-    await checkout(address);
+    await checkout(locationMode === 'existing'
+      ? { id_ubicacion_entrega: Number(locationId) }
+      : { nombre_lugar: placeName.trim(), referencia: reference.trim() || null });
     setSubmitting(false);
     navigate('/pedido');
   };
@@ -63,15 +78,38 @@ export default function CheckoutPage() {
       <aside aria-labelledby="checkout-summary-title" className="h-fit rounded-lg bg-white p-5 shadow-soft">
         <h2 id="checkout-summary-title" className="text-xl font-black">Resumen</h2>
         <dl className="mt-4 grid grid-cols-2 gap-y-3 text-sm">
-          <SummaryRow label="Subtotal" value={formatCurrency(total)} />
-          <SummaryRow label="Envio" value={formatCurrency(delivery)} />
-          <SummaryRow label="Total" value={formatCurrency(finalTotal)} strong />
+          <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
+          <SummaryRow label="Descuentos" value={`-${formatCurrency(totalDiscount)}`} />
+          <SummaryRow label="Total" value={formatCurrency(total)} strong />
         </dl>
         <div className="mt-5 space-y-3">
-          <label className="block space-y-2">
-            <span className="text-sm font-bold text-stone-700">Direccion</span>
-            <input className="field" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Edificio Marcelo Fernandez (Aulas), Aula 101 A" />
-          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setLocationMode('existing')} className={`rounded-full px-4 py-2 text-sm font-black ${locationMode === 'existing' ? 'bg-wine-600 text-white' : 'bg-stone-100 text-stone-600'}`}>Lugar existente</button>
+            <button type="button" onClick={() => setLocationMode('new')} className={`rounded-full px-4 py-2 text-sm font-black ${locationMode === 'new' ? 'bg-wine-600 text-white' : 'bg-stone-100 text-stone-600'}`}>Nuevo lugar</button>
+          </div>
+          {locationMode === 'existing' ? (
+            <label className="block space-y-2">
+              <span className="text-sm font-bold text-stone-700">Ubicacion de entrega</span>
+              <select className="field" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
+                {locations.map((location) => (
+                  <option key={location.id_ubicacion} value={location.id_ubicacion}>
+                    {location.nombre_lugar}{location.referencia ? ` - ${location.referencia}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <>
+              <label className="block space-y-2">
+                <span className="text-sm font-bold text-stone-700">Nombre del lugar</span>
+                <input className="field" value={placeName} onChange={(event) => setPlaceName(event.target.value)} placeholder="Edificio Principal" />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-sm font-bold text-stone-700">Referencia</span>
+                <input className="field" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Aula, piso o punto de encuentro" />
+              </label>
+            </>
+          )}
           <button type="button" aria-pressed="true" className="flex w-full items-center justify-between rounded-lg border border-stone-200 px-4 py-3 text-left font-bold">
             <span className="inline-flex items-center gap-2"><CreditCard size={18} /> Tarjeta terminada en 4242</span>
             <Check size={18} className="text-wine-600" />

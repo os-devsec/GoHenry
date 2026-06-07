@@ -73,11 +73,22 @@ public class PaymentsApplication {
         requireOrderOwnerOrAdmin(idPedido, currentUser(authorization));
         int metodo = intValue(body.get("id_metodo_pago"), 1);
         double monto = doubleValue(body.get("monto_total"), 0);
+        String estado = stringValue(body.get("estado_pago"), "pagado");
+        if (!set("pendiente", "pagado", "rechazado").contains(estado)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Estado de pago invalido");
+        }
+        List<Map<String, Object>> methods = jdbc.queryForList(
+                "SELECT 1 FROM metodo_pago WHERE id_metodo_pago = ? AND estado = 1",
+                metodo
+        );
+        if (methods.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metodo de pago invalido");
+        }
         if (monto == 0) {
             monto = jdbc.queryForObject("SELECT total FROM pedido WHERE id_pedido = ?", Double.class, idPedido);
         }
         jdbc.update("INSERT OR REPLACE INTO pago (id_pedido, id_metodo_pago, monto_total, estado_pago) VALUES (?, ?, ?, ?)",
-                idPedido, metodo, monto, stringValue(body.get("estado_pago"), "aprobado"));
+                idPedido, metodo, monto, estado);
         return pagoPorPedido(idPedido);
     }
 
@@ -85,21 +96,6 @@ public class PaymentsApplication {
     public List<Map<String, Object>> comisiones(@RequestHeader(value = "Authorization", required = false) String authorization) {
         requirePlatformAdmin(currentUser(authorization));
         return jdbc.queryForList("SELECT * FROM comision ORDER BY id_comision DESC");
-    }
-
-    @PostMapping("/api/v1/pedidos/{idPedido}/comision")
-    public Map<String, Object> crearComision(@PathVariable int idPedido,
-                                             @RequestBody Map<String, Object> body,
-                                             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        requirePlatformAdmin(currentUser(authorization));
-        int repartidor = intValue(body.get("id_usuario"), 0);
-        if (repartidor == 0) {
-            repartidor = jdbc.queryForObject("SELECT id_usuario FROM asignacion_repartidor WHERE id_pedido = ? ORDER BY id_asignacion DESC LIMIT 1", Integer.class, idPedido);
-        }
-        double monto = doubleValue(body.get("monto"), 0.75);
-        jdbc.update("INSERT INTO comision (id_usuario, id_pedido, monto, estado_comision) VALUES (?, ?, ?, 'calculada')", repartidor, idPedido, monto);
-        int id = jdbc.queryForObject("SELECT last_insert_rowid()", Integer.class);
-        return jdbc.queryForMap("SELECT * FROM comision WHERE id_comision = ?", id);
     }
 
     private static int intValue(Object value, int fallback) {
@@ -161,6 +157,10 @@ public class PaymentsApplication {
     }
 
     private boolean isPlatformAdmin(Map<String, Object> user) {
-        return "admin_plataforma".equals(stringValue(user.get("rol_sistema"), ""));
+        return "admin_plataforma".equals(stringValue(user.get("rol_usuario"), ""));
+    }
+
+    private static Set<String> set(String... values) {
+        return new HashSet<>(Arrays.asList(values));
     }
 }

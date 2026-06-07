@@ -57,7 +57,7 @@ export default function RestaurantAdminPage() {
       code: `Pedido #${order.id_pedido}`,
       title: 'Nuevo pedido para preparar',
       customer: `Cliente: ${order.cliente_nombre}`,
-      location: `Entrega: ${order.direccion_entrega}`,
+      location: `Entrega: ${order.nombre_lugar_entrega}${order.referencia_entrega ? ` - ${order.referencia_entrega}` : ''}`,
       time: order.fecha_pedido,
       status: order.estado_nombre,
       total: order.total_tienda ?? order.subtotal,
@@ -91,7 +91,7 @@ export default function RestaurantAdminPage() {
   }
 
   const updateOrderStatus = async (orderId, status) => {
-    const estado = status === 'aceptado' ? 'preparando' : 'rechazado';
+    const estado = status === 'aceptado' ? 'en_preparacion' : 'rechazado';
     await api.patch(`/api/v1/pedidos/${orderId}/estado`, { estado });
     if (status === 'aceptado') {
       await api.post('/api/v1/asignaciones-repartidor', { id_pedido: orderId }).catch(() => null);
