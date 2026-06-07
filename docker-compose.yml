@@ -1,0 +1,148 @@
+services:
+  database-init:
+    image: python:3.12-slim
+    profiles:
+      - init
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      - ./database:/app/database
+      - ./database:/data
+    command: python database/init_sqlite.py
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8000
+      USERS_SERVICE_URL: http://users-service:8000
+      RESTAURANT_SERVICE_URL: http://restaurant-service:8000
+      CATALOG_SERVICE_URL: http://catalog-service:8000
+      CART_SERVICE_URL: http://cart-service:8000
+      ORDERS_SERVICE_URL: http://orders-service:8000
+      PAYMENTS_SERVICE_URL: http://payments-service:8000
+      DELIVERY_SERVICE_URL: http://delivery-service:8000
+    depends_on:
+      - auth-service
+      - users-service
+      - restaurant-service
+      - catalog-service
+      - cart-service
+      - orders-service
+      - payments-service
+      - delivery-service
+    volumes:
+      - ./database:/data
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth_service/Dockerfile
+    ports:
+      - "8007:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./database:/data
+
+  users-service:
+    build:
+      context: .
+      dockerfile: services/users-service/Dockerfile
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./database:/data
+
+  restaurant-service:
+    build:
+      context: .
+      dockerfile: services/restaurant-service/Dockerfile
+    ports:
+      - "8008:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./database:/data
+      - ./services/restaurant-service/uploads:/app/uploads
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./database:/data
+      - ./services/catalog-service/uploads:/app/uploads
+
+  cart-service:
+    build:
+      context: .
+      dockerfile: services/cart-service/Dockerfile
+    ports:
+      - "8003:8000"
+    env_file:
+      - .env
+    environment:
+      ORDERS_SERVICE_URL: http://orders-service:8000
+      CATALOG_SERVICE_URL: http://catalog-service:8000
+    volumes:
+      - ./database:/data
+    depends_on:
+      - catalog-service
+      - orders-service
+
+  orders-service:
+    build:
+      context: .
+      dockerfile: services/orders-service/Dockerfile
+    ports:
+      - "8004:8000"
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: 8000
+    volumes:
+      - ./database:/data
+
+  payments-service:
+    build:
+      context: .
+      dockerfile: services/payments-service/Dockerfile
+    ports:
+      - "8005:8000"
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: 8000
+    volumes:
+      - ./database:/data
+    depends_on:
+      - orders-service
+
+  delivery-service:
+    build:
+      context: .
+      dockerfile: services/delivery-service/Dockerfile
+    ports:
+      - "8006:8000"
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: 8000
+    volumes:
+      - ./database:/data
+    depends_on:
+      - users-service
+      - orders-service
