@@ -1,9 +1,9 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /src
-COPY services/cart-service/go.mod services/cart-service/go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
-COPY services/cart-service ./
+COPY . ./
 RUN go build -o /bin/cart-service .
 
 FROM alpine:3.20

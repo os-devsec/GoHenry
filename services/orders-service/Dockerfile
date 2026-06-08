@@ -1,9 +1,9 @@
 FROM maven:3.9-eclipse-temurin-17 AS builder
 
 WORKDIR /src
-COPY services/orders-service/pom.xml .
+COPY pom.xml .
 RUN mvn -q dependency:go-offline
-COPY services/orders-service/src ./src
+COPY src ./src
 RUN mvn -q package -DskipTests
 
 FROM eclipse-temurin:17-jre

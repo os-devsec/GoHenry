@@ -1,9 +1,9 @@
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /src
-COPY services/catalog-service/go.mod services/catalog-service/go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
-COPY services/catalog-service ./
+COPY . ./
 RUN go build -o /bin/catalog-service .
 
 FROM alpine:3.20

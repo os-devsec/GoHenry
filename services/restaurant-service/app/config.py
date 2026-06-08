@@ -1,0 +1,19 @@
+import os
+from pathlib import Path
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///../../database/integrador.db")
+JWT_SECRET = os.getenv("JWT_SECRET", "integrador_secret")
+JWT_ALGORITHM = "HS256"
+STORE_LOGO_DIR = Path(os.getenv("STORE_LOGO_DIR", "uploads/stores")).resolve()
+USERS_SERVICE_URL = os.getenv("USERS_SERVICE_URL", "http://users-service:8000")
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "integrador_internal")
+
+
+def sqlite_path() -> str:
+    if DATABASE_URL.startswith("sqlite:///"):
+        return DATABASE_URL.replace("sqlite:///", "", 1)
+    return DATABASE_URL
+
+
+DB_PATH = Path(sqlite_path()).resolve()
