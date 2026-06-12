@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Check, Minus, Plus, ShoppingBag } from 'lucide-react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext.tsx';
 import { formatCurrency } from '../utils/format.ts';
 
