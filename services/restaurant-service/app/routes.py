@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from sqlmodel import Session
 
 from .database import get_session
-from .schemas import PersonalRequest, TiendaRequest
-from .security import current_user
+from .schemas import PersonalRequest, StoreStaffRoleRequest, TiendaRequest
+from .security import current_user, require_internal_service
 from . import services
 
 
@@ -72,6 +72,25 @@ def add_store_staff(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     return services.add_store_staff(session, id_tienda, payload, user)
+
+
+@router.post("/internal/tiendas/{id_tienda}/personal/permisos")
+def has_store_staff_role(
+    id_tienda: int,
+    payload: StoreStaffRoleRequest,
+    _internal: None = Depends(require_internal_service),
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    return services.has_store_staff_role(session, id_tienda, payload.id_usuario, payload.roles)
+
+
+@router.get("/internal/usuarios/{id_usuario}/tiendas")
+def list_user_store_staff(
+    id_usuario: int,
+    _internal: None = Depends(require_internal_service),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return services.list_user_store_staff(session, id_usuario)
 
 
 @router.delete("/api/v1/tiendas/{id_tienda}/personal/{id_tienda_usuario}")

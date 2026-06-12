@@ -2,6 +2,7 @@ package main
 
 type ProductRequest struct {
 	IDTienda            int     `json:"id_tienda"`
+	IDCategorias        []int   `json:"id_categorias"`
 	Nombre              string  `json:"nombre"`
 	Descripcion         string  `json:"descripcion"`
 	Precio              float64 `json:"precio"`

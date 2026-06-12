@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	_ "modernc.org/sqlite"
+	_ "github.com/microsoft/go-mssqldb"
 )
 
 var database *sql.DB
@@ -17,11 +17,14 @@ var queries *catalogdb.Queries
 
 func main() {
 	var err error
-	database, err = sql.Open("sqlite", sqlitePath())
+	database, err = sql.Open("sqlserver", databaseURL())
 	if err != nil {
 		panic(err)
 	}
 	defer database.Close()
+	if err = database.Ping(); err != nil {
+		panic(err)
+	}
 	queries = catalogdb.New(database)
 
 	router := gin.Default()

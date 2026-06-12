@@ -1,14 +1,13 @@
 import React from 'react';
 import { useState } from 'react';
-import { UtensilsCrossed } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { foodImage } from '../assets.ts';
+import { appLogo, foodImage } from '../assets.ts';
 import { useApp } from '../context/AppContext.tsx';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useApp();
-  const [form, setForm] = useState({ correo: 'admin@uidelivery.com', password: 'Admin123!' });
+  const [form, setForm] = useState({ correo: '', password: '' });
   const [error, setError] = useState('');
 
   const submit = async (event) => {
@@ -27,7 +26,10 @@ export default function LoginPage() {
       <section aria-labelledby="login-title" className="relative min-h-64 bg-wine-700 p-7 text-white">
         <img src={foodImage} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35" />
         <div className="relative flex h-full flex-col justify-between">
-          <Link to="/" className="flex items-center gap-2 font-black"><UtensilsCrossed /> UIDElivery</Link>
+          <Link to="/" className="flex items-center gap-2 font-black">
+            <img src={appLogo} alt="" className="h-11 w-11 rounded-full object-cover" />
+            GoHenryGo
+          </Link>
           <div>
             <h1 id="login-title" className="text-3xl font-black">Ingresa y sigue tu pedido</h1>
             <p className="mt-2 text-wine-50">Una sola cuenta para clientes, restaurantes y delivery.</p>

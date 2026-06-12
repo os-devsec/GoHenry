@@ -1,18 +1,16 @@
 from collections.abc import Generator
 
-from sqlalchemy import text
 from sqlmodel import Session, create_engine
 
-from .config import DB_PATH
+from .config import DATABASE_URL
 
 
 engine = create_engine(
-    f"sqlite:///{DB_PATH.as_posix()}",
-    connect_args={"check_same_thread": False},
+    DATABASE_URL,
+    pool_pre_ping=True,
 )
 
 
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:
-        session.exec(text("PRAGMA foreign_keys = ON"))
         yield session

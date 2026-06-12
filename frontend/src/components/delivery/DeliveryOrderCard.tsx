@@ -19,6 +19,16 @@ export default function DeliveryOrderCard({ order, onDeliver, onStart }) {
         {order.pay && <span className="rounded-full bg-maize-100 px-3 py-1 text-sm font-black text-wine-900">{order.pay}</span>}
       </div>
       <div className="mt-4 space-y-3 text-sm">
+        <div className="grid grid-cols-2 gap-3 rounded-lg bg-stone-50 p-3">
+          <div>
+            <p className="text-xs font-black uppercase text-stone-500">Costo del pedido</p>
+            <p className="mt-1 font-black text-wine-800">{order.orderCost}</p>
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase text-stone-500">Tu ganancia</p>
+            <p className="mt-1 font-black text-emerald-700">{order.deliveryEarning}</p>
+          </div>
+        </div>
         <div className="flex gap-2 text-stone-600">
           <PackageCheck className="mt-0.5 text-wine-600" size={18} />
           <span>{order.pickup}</span>

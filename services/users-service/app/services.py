@@ -3,8 +3,8 @@ from typing import Any
 from fastapi import HTTPException
 from sqlmodel import Session
 
-from . import repositories
-from .schemas import AccountUpdateRequest, InternalUserRequest, PlatformAdminRequest, RepartosRequest
+from . import repositories, restaurant_client
+from .schemas import AccountUpdateRequest, InternalUserRequest, InternalUsersLookupRequest, PlatformAdminRequest, RepartosRequest
 from .security import hash_password, is_platform_admin, require_platform_admin
 
 
@@ -23,7 +23,7 @@ def create_or_get_internal_user(session: Session, payload: InternalUserRequest) 
         existing = repositories.get_user_by_email(session, str(payload.correo))
 
     if existing:
-        return repositories.public_user(session, existing)
+        return public_user(existing)
 
     require_fields(
         "crear usuario",
@@ -35,15 +35,27 @@ def create_or_get_internal_user(session: Session, payload: InternalUserRequest) 
             "password": payload.password,
         },
     )
-    created = repositories.create_client(
+    created = repositories.create_user(
         session,
         nombre=payload.nombre or "",
         apellido=payload.apellido or "",
         correo=str(payload.correo),
         telefono=payload.telefono,
         password_hash=hash_password(payload.password or ""),
+        acepta_repartos=payload.acepta_repartos or False,
     )
-    return repositories.public_user(session, created)
+    return public_user(created)
+
+
+def get_internal_user(session: Session, id_usuario: int) -> dict[str, Any]:
+    found = repositories.get_user_by_id(session, id_usuario, active_only=True)
+    if not found:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return repositories.public_fields(found)
+
+
+def lookup_internal_users(session: Session, payload: InternalUsersLookupRequest) -> list[dict[str, Any]]:
+    return repositories.list_users_by_ids(session, payload.ids_usuario)
 
 
 def create_platform_admin(
@@ -55,7 +67,7 @@ def create_platform_admin(
     existing = repositories.get_user_by_email(session, str(payload.correo))
     if existing:
         promoted = repositories.promote_to_platform_admin(session, existing)
-        return repositories.public_user(session, promoted)
+        return public_user(promoted)
 
     require_fields(
         "crear admin",
@@ -66,15 +78,16 @@ def create_platform_admin(
             "password": payload.password,
         },
     )
-    created = repositories.create_platform_admin(
+    created = repositories.create_user(
         session,
         nombre=payload.nombre or "",
         apellido=payload.apellido or "",
         correo=str(payload.correo),
         telefono=payload.telefono,
         password_hash=hash_password(payload.password or ""),
+        rol_usuario="admin_plataforma",
     )
-    return repositories.public_user(session, created)
+    return public_user(created)
 
 
 def list_delivery_users(session: Session) -> list[dict[str, Any]]:
@@ -95,7 +108,7 @@ def get_user(session: Session, id_usuario: int, current_user: dict[str, Any]) ->
     found = repositories.get_user_by_id(session, id_usuario, active_only=True)
     if not found:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return repositories.public_user(session, found)
+    return public_user(found)
 
 
 def update_delivery_mode(
@@ -110,7 +123,7 @@ def update_delivery_mode(
     if not found:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     updated = repositories.update_delivery_mode(session, found, payload.acepta_repartos)
-    return repositories.public_user(session, updated)
+    return public_user(updated)
 
 
 def update_account(
@@ -126,8 +139,6 @@ def update_account(
 
     password_hash = None
     if payload.password:
-        if len(payload.password) < 6:
-            raise HTTPException(status_code=400, detail="La contrasena debe tener al menos 6 caracteres")
         password_hash = hash_password(payload.password)
 
     found = repositories.get_user_by_id(session, id_usuario)
@@ -141,10 +152,17 @@ def update_account(
         telefono=payload.telefono.strip(),
         password_hash=password_hash,
     )
-    return repositories.public_user(session, updated)
+    return public_user(updated)
 
 
 def require_fields(action: str, values: dict[str, Any]) -> None:
     missing = [field for field, value in values.items() if not value]
     if missing:
         raise HTTPException(status_code=400, detail=f"Faltan datos para {action}: {', '.join(missing)}")
+
+
+def public_user(user: Any) -> dict[str, Any]:
+    return repositories.public_user(
+        user,
+        restaurant_client.list_user_store_staff(user.id_usuario or 0),
+    )

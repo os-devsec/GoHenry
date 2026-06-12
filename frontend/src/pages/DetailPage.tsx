@@ -9,9 +9,10 @@ export default function DetailPage() {
   const { restaurantId, productId } = useParams();
   const { restaurants, addToCart } = useApp();
   const [quantity, setQuantity] = useState(1);
-  const [option, setOption] = useState('Normal');
+  const [selectedExtraIds, setSelectedExtraIds] = useState<number[]>([]);
   const restaurant = restaurants.find((entry) => entry.id === restaurantId);
   const product = restaurant?.menu.find((item) => String(item.id) === String(productId));
+  const extras = restaurant?.menu.filter((item) => item.isExtra && item.available && item.id !== product?.id) || [];
 
   if (!restaurant || !product) {
     return (
@@ -24,7 +25,20 @@ export default function DetailPage() {
   }
 
   const addSelected = () => {
-    Array.from({ length: quantity }).forEach(() => addToCart(restaurant, product));
+    Array.from({ length: quantity }).forEach(() => {
+      addToCart(restaurant, product);
+      extras
+        .filter((extra) => selectedExtraIds.includes(extra.id))
+        .forEach((extra) => addToCart(restaurant, extra));
+    });
+  };
+
+  const toggleExtra = (extraId: number) => {
+    setSelectedExtraIds((current) =>
+      current.includes(extraId)
+        ? current.filter((id) => id !== extraId)
+        : [...current, extraId]
+    );
   };
 
   return (
@@ -50,21 +64,25 @@ export default function DetailPage() {
           </div>
 
           <fieldset className="mt-6 space-y-3">
-            <legend className="text-sm font-black text-stone-700">Opciones</legend>
-            {['Normal', 'Sin salsas', 'Para llevar'].map((item) => (
+            <legend className="text-sm font-black text-stone-700">Opciones extra</legend>
+            {extras.map((extra) => (
               <label
-                key={item}
+                key={extra.id}
                 className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left font-bold ${
-                  option === item ? 'border-wine-600 bg-wine-50 text-wine-900' : 'border-stone-200 text-stone-600'
+                  selectedExtraIds.includes(extra.id) ? 'border-wine-600 bg-wine-50 text-wine-900' : 'border-stone-200 text-stone-600'
                 }`}
               >
                 <span className="inline-flex items-center gap-3">
-                  <input type="radio" name="product-option" value={item} checked={option === item} onChange={() => setOption(item)} className="h-4 w-4 accent-wine-600" />
-                  {item}
+                  <input type="checkbox" checked={selectedExtraIds.includes(extra.id)} onChange={() => toggleExtra(extra.id)} className="h-4 w-4 accent-wine-600" />
+                  {extra.name}
                 </span>
-                {option === item && <Check aria-hidden="true" size={18} />}
+                <span className="inline-flex items-center gap-2">
+                  +{formatCurrency(extra.price)}
+                  {selectedExtraIds.includes(extra.id) && <Check aria-hidden="true" size={18} />}
+                </span>
               </label>
             ))}
+            {!extras.length && <p className="rounded-lg bg-stone-50 px-4 py-3 text-sm text-stone-500">Esta tienda aun no ha registrado productos con la categoria Extra.</p>}
           </fieldset>
 
           <div className="mt-6 flex items-center justify-between rounded-lg bg-stone-50 p-3">
@@ -84,9 +102,6 @@ export default function DetailPage() {
             <button type="button" onClick={addSelected} className="inline-flex items-center justify-center gap-2 rounded-full bg-wine-600 px-5 py-3 font-black text-white">
               <ShoppingBag size={18} /> Agregar
             </button>
-            <Link to="/carrito" className="rounded-full bg-maize-300 px-5 py-3 text-center font-black text-wine-900">
-              Ir al carrito
-            </Link>
           </div>
         </div>
       </section>

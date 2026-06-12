@@ -1,6 +1,50 @@
+# Local secrets and environment overrides
 .env
-.dockerignore
-/node_modules
-/dist
-/**/__pycache__
-/**/*.pyc
+.env.*
+!.env.example
+
+# JavaScript dependencies and generated frontend output
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Python caches and virtual environments
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+.venv/
+venv/
+
+# Java and Go build artifacts
+**/target/
+**/*.class
+**/*.jar
+**/*.exe
+**/*.test
+
+# Local databases
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.sqlite3
+
+# Runtime uploads
+/uploads/
+/services/*/uploads/
+
+# Logs, coverage and temporary files
+**/*.log
+coverage/
+.coverage
+**/tmp/
+**/temp/
+
+# Editor and operating-system files
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

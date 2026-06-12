@@ -5,6 +5,7 @@ import { api } from '../api.ts';
 import DeliveryOrderCard from '../components/delivery/DeliveryOrderCard.tsx';
 import IncomingOrderCard from '../components/orders/IncomingOrderCard.tsx';
 import { useApp } from '../context/AppContext.tsx';
+import { formatCurrency } from '../utils/format.ts';
 
 export default function DeliveryPage() {
   const { currentUser, isPlatformAdmin } = useApp();
@@ -85,6 +86,7 @@ export default function DeliveryPage() {
                 order={order}
                 acceptLabel="Aceptar entrega"
                 showReject={false}
+                totalLabel="Total cobrado"
                 onAccept={(orderId) => updateOrderStatus(orderId, 'aceptada')}
               />
             </li>
@@ -115,8 +117,11 @@ function mapIncomingAssignment(assignment) {
     location: `Retiro: ${assignment.tienda_nombre} / Entrega: ${assignment.punto_entrega}${assignment.referencia_entrega ? ` - ${assignment.referencia_entrega}` : ''}`,
     time: 'Pendiente',
     status: assignment.estado_asignacion,
-    total: assignment.total,
-    items: [{ qty: 1, name: 'Pedido completo', subtotal: assignment.total }]
+    total: assignment.total_con_envio ?? assignment.total,
+    items: [
+      { qty: 1, name: 'Costo de productos', subtotal: assignment.costo_pedido ?? assignment.total },
+      { qty: 1, name: 'Ganancia de envio', subtotal: assignment.ganancia_envio ?? assignment.costo_envio }
+    ]
   };
 }
 
@@ -132,7 +137,9 @@ function mapActiveAssignment(assignment) {
     clientName: assignment.cliente,
     clientPhone: assignment.telefono_cliente,
     orderId: assignment.id_pedido,
-    pay: ''
+    orderCost: formatCurrency(assignment.costo_pedido ?? assignment.total ?? 0),
+    deliveryEarning: formatCurrency(assignment.ganancia_envio ?? assignment.costo_envio ?? 0),
+    pay: formatCurrency(assignment.total_con_envio ?? assignment.total ?? 0)
   };
 }
 

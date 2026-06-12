@@ -5,23 +5,20 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
 public class AuthService {
-    private final JdbcTemplate jdbc;
+    private final RestaurantClient restaurantClient;
 
-    public AuthService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public AuthService(RestaurantClient restaurantClient) {
+        this.restaurantClient = restaurantClient;
     }
 
     @SuppressWarnings("unchecked")
@@ -62,15 +59,13 @@ public class AuthService {
         if (isPlatformAdmin(user)) return true;
         int idUsuario = Utils.intValue(user.get("id_usuario"), 0);
         if (idUsuario == 0) return false;
-        String placeholders = String.join(",", Collections.nCopies(roles.size(), "?"));
-        List<Object> args = new ArrayList<>();
-        args.add(idTienda);
-        args.add(idUsuario);
-        args.addAll(roles);
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT 1 FROM tienda_usuario WHERE id_tienda = ? AND id_usuario = ? AND cargo IN (" + placeholders + ") AND estado = 1",
-                args.toArray()
-        );
-        return !rows.isEmpty();
+        return restaurantClient.hasStoreStaffRole(idTienda, idUsuario, roles);
+    }
+
+    public void requireInternalService(String internalToken) {
+        String expected = Utils.requiredEnv("INTERNAL_SERVICE_TOKEN");
+        if (internalToken == null || !Objects.equals(internalToken, expected)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Token interno invalido");
+        }
     }
 }

@@ -11,16 +11,24 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.text.Normalizer;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 
 @Service
 public class OrderService {
     private final JdbcTemplate jdbc;
     private final AuthService authService;
+    private final UserClient userClient;
 
-    public OrderService(JdbcTemplate jdbc, AuthService authService) {
+    public OrderService(JdbcTemplate jdbc, AuthService authService, UserClient userClient) {
         this.jdbc = jdbc;
         this.authService = authService;
+        this.userClient = userClient;
     }
 
     public List<Map<String, Object>> estados() {
@@ -57,6 +65,7 @@ public class OrderService {
         }
         sql += " ORDER BY p.id_pedido DESC";
         List<Map<String, Object>> pedidos = jdbc.queryForList(sql, args.toArray());
+        enrichOrdersWithUsers(pedidos);
         for (Map<String, Object> pedido : pedidos) {
             pedido.put("items", items(((Number) pedido.get("id_pedido")).intValue()));
             if (tienda != null) {
@@ -80,9 +89,23 @@ public class OrderService {
         if (rows.isEmpty()) {
             throw new NoSuchElementException("Pedido no encontrado");
         }
+        enrichOrdersWithUsers(rows);
         Map<String, Object> pedido = rows.get(0);
         pedido.put("items", items(id));
         return pedido;
+    }
+
+    public Map<String, Object> pedidoResumen(int id) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id_pedido, id_usuario, id_tienda, subtotal, total_descuento, costo_envio, total, " +
+                        "ROUND(total + costo_envio, 2) AS total_con_envio " +
+                        "FROM pedido WHERE id_pedido = ?",
+                id
+        );
+        if (rows.isEmpty()) {
+            throw new NoSuchElementException("Pedido no encontrado");
+        }
+        return rows.get(0);
     }
 
     @SuppressWarnings("unchecked")
@@ -113,8 +136,7 @@ public class OrderService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La cantidad de cada producto debe ser mayor a cero");
             }
             Map<String, Object> product = jdbc.queryForMap(
-                    "SELECT id_tienda, estado, precio, " +
-                            "ROUND(precio * descuento_porcentaje / 100.0, 2) AS descuento_unitario " +
+                    "SELECT id_tienda, estado, precio, descuento_porcentaje, descuento_inicio, descuento_fin " +
                             "FROM producto WHERE id_producto = ?",
                     productId
             );
@@ -122,7 +144,10 @@ public class OrderService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Todos los productos deben estar activos y pertenecer a la tienda");
             }
             double price = Utils.doubleValue(product.get("precio"), 0);
-            double discount = Utils.doubleValue(product.get("descuento_unitario"), 0);
+            double discountPercentage = descuentoActivo(product)
+                    ? Utils.doubleValue(product.get("descuento_porcentaje"), 0)
+                    : 0;
+            double discount = Utils.roundMoney(price * discountPercentage / 100.0);
             double lineSubtotal = Utils.roundMoney((price - discount) * qty);
             subtotal += price * qty;
             totalDescuento += discount * qty;
@@ -137,11 +162,16 @@ public class OrderService {
         subtotal = Utils.roundMoney(subtotal);
         totalDescuento = Utils.roundMoney(totalDescuento);
         double total = Utils.roundMoney(subtotal - totalDescuento);
+        double costoEnvio = "delivery".equals(tipo)
+                ? calcularCostoEnvio(idTienda, idUbicacionEntrega)
+                : 0;
 
-        jdbc.update("INSERT INTO pedido (id_usuario, id_tienda, id_estado_pedido, id_ubicacion_entrega, tipo_pedido, subtotal, total_descuento, total) " +
-                        "VALUES (?, ?, 1, ?, ?, ?, ?, ?)",
-                idUsuario, idTienda, idUbicacionEntrega, tipo, subtotal, totalDescuento, total);
-        int idPedido = jdbc.queryForObject("SELECT last_insert_rowid()", Integer.class);
+        int idPedido = jdbc.queryForObject(
+                "INSERT INTO pedido (id_usuario, id_tienda, id_estado_pedido, id_ubicacion_entrega, tipo_pedido, subtotal, total_descuento, costo_envio, total) " +
+                        "OUTPUT INSERTED.id_pedido VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
+                Integer.class,
+                idUsuario, idTienda, idUbicacionEntrega, tipo, subtotal, totalDescuento, costoEnvio, total
+        );
         for (Map<String, Object> item : normalized) {
             jdbc.update("INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario, descuento_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
                     idPedido, item.get("id_producto"), item.get("cantidad"), item.get("precio_unitario"), item.get("descuento_unitario"), item.get("subtotal"));
@@ -149,25 +179,54 @@ public class OrderService {
         return pedido(idPedido);
     }
 
+    public Map<String, Object> cotizarEnvio(Map<String, Object> body) {
+        int idTienda = Utils.intValue(body.get("id_tienda"), 0);
+        int idUbicacion = Utils.intValue(body.get("id_ubicacion_entrega"), 0);
+        if (idTienda <= 0 || idUbicacion <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tienda y ubicacion de entrega requeridas");
+        }
+        Map<String, Object> route = ubicacionesParaEnvio(idTienda, idUbicacion);
+        double cost = calcularCostoEnvio(
+                textoUbicacion(route.get("origen"), route.get("referencia_origen")),
+                textoUbicacion(route.get("destino"), route.get("referencia_destino"))
+        );
+        Map<String, Object> quote = new HashMap<>();
+        quote.put("id_tienda", idTienda);
+        quote.put("id_ubicacion_entrega", idUbicacion);
+        quote.put("origen", route.get("origen"));
+        quote.put("destino", route.get("destino"));
+        quote.put("referencia_origen", route.get("referencia_origen"));
+        quote.put("referencia_destino", route.get("referencia_destino"));
+        quote.put("costo_envio", cost);
+        return quote;
+    }
+
     public Map<String, Object> actualizarEstado(int id, Map<String, Object> body, Map<String, Object> user) {
-        Integer idTienda = jdbc.queryForObject("SELECT id_tienda FROM pedido WHERE id_pedido = ?", Integer.class, id);
+        Map<String, Object> orderState = jdbc.queryForMap(
+                "SELECT p.id_tienda, p.tipo_pedido, ep.nombre AS estado " +
+                        "FROM pedido p JOIN estado_pedido ep ON ep.id_estado_pedido = p.id_estado_pedido " +
+                        "WHERE p.id_pedido = ?",
+                id
+        );
+        Integer idTienda = Utils.intValue(orderState.get("id_tienda"), 0);
         if (!authService.hasStoreRole(idTienda, user, Utils.set("administrador", "empleado"))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permisos para cambiar este pedido");
         }
-        String estadoActual = jdbc.queryForObject(
-                "SELECT ep.nombre FROM pedido p JOIN estado_pedido ep ON ep.id_estado_pedido = p.id_estado_pedido WHERE p.id_pedido = ?",
-                String.class,
-                id
-        );
-        if (!"pendiente".equals(estadoActual)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "El pedido ya fue respondido");
-        }
+        String estadoActual = Utils.stringValue(orderState.get("estado"), "");
+        String tipoPedido = Utils.stringValue(orderState.get("tipo_pedido"), "");
         String estado = Utils.stringValue(body.get("estado"), "en_preparacion");
-        if (!Utils.set("aceptado", "en_preparacion", "rechazado").contains(estado)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Estado no permitido para la tienda");
+        boolean validTransition =
+                ("pendiente".equals(estadoActual) && Utils.set("aceptado", "en_preparacion", "rechazado").contains(estado))
+                || ("en_preparacion".equals(estadoActual) && "listo_para_entrega".equals(estado))
+                || ("pickup".equals(tipoPedido) && "listo_para_entrega".equals(estadoActual) && "entregado".equals(estado));
+        if (!validTransition) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Transicion de estado no permitida para este pedido"
+            );
         }
         Integer estadoId = jdbc.queryForObject("SELECT id_estado_pedido FROM estado_pedido WHERE nombre = ?", Integer.class, estado);
-        jdbc.update("UPDATE V_Actualizar_Estado_Pedido SET id_estado_pedido = ? WHERE id_pedido = ?", estadoId, id);
+        jdbc.update("UPDATE pedido SET id_estado_pedido = ? WHERE id_pedido = ?", estadoId, id);
         return pedido(id);
     }
 
@@ -194,11 +253,11 @@ public class OrderService {
     }
 
     private String basePedidoSql() {
-        return "SELECT p.*, ep.nombre AS estado_nombre, t.nombre AS tienda_nombre, " +
-                "u.nombre || ' ' || u.apellido AS cliente_nombre, u.telefono AS cliente_telefono, " +
+        return "SELECT p.*, ROUND(p.total + p.costo_envio, 2) AS total_con_envio, " +
+                "ep.nombre AS estado_nombre, t.nombre AS tienda_nombre, " +
                 "ue.nombre_lugar AS nombre_lugar_entrega, ue.referencia AS referencia_entrega " +
                 "FROM pedido p JOIN estado_pedido ep ON ep.id_estado_pedido = p.id_estado_pedido " +
-                "JOIN tienda t ON t.id_tienda = p.id_tienda JOIN usuario u ON u.id_usuario = p.id_usuario " +
+                "JOIN tienda t ON t.id_tienda = p.id_tienda " +
                 "JOIN ubicacion ue ON ue.id_ubicacion = p.id_ubicacion_entrega";
     }
 
@@ -211,19 +270,57 @@ public class OrderService {
             return null;
         }
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT ar.id_asignacion, ar.id_pedido, ar.id_usuario, ar.estado_asignacion, " +
-                        "u.nombre, u.apellido, " +
-                        "CASE WHEN ar.estado_asignacion IN ('aceptada', 'en_camino') THEN u.telefono ELSE NULL END AS telefono " +
-                        "FROM asignacion_repartidor ar LEFT JOIN usuario u ON u.id_usuario = ar.id_usuario " +
-                        "WHERE ar.id_pedido = ? ORDER BY ar.id_asignacion DESC LIMIT 1",
+                "SELECT TOP 1 ar.id_asignacion, ar.id_pedido, ar.id_usuario, ar.estado_asignacion, " +
+                        "ar.id_usuario AS id_repartidor " +
+                        "FROM asignacion_repartidor ar " +
+                        "WHERE ar.id_pedido = ? ORDER BY ar.id_asignacion DESC",
                 idPedido
         );
-        return rows.isEmpty() ? null : rows.get(0);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> assignment = rows.get(0);
+        int deliveryUserId = Utils.intValue(assignment.get("id_usuario"), 0);
+        Map<String, Object> deliveryUser = userClient.publicUser(deliveryUserId);
+        if (deliveryUser != null) {
+            assignment.put("nombre", deliveryUser.get("nombre"));
+            assignment.put("apellido", deliveryUser.get("apellido"));
+            if (Utils.set("aceptada", "en_camino").contains(Utils.stringValue(assignment.get("estado_asignacion"), ""))) {
+                assignment.put("telefono", deliveryUser.get("telefono"));
+            } else {
+                assignment.put("telefono", null);
+            }
+        }
+        return assignment;
     }
 
     private void ocultarDatosDeEntregaParaTienda(Map<String, Object> pedido) {
         pedido.remove("cliente_telefono");
         pedido.put("total_tienda", pedido.get("total"));
+    }
+
+    private void enrichOrdersWithUsers(List<Map<String, Object>> pedidos) {
+        List<Integer> ids = new ArrayList<>();
+        for (Map<String, Object> pedido : pedidos) {
+            ids.add(Utils.intValue(pedido.get("id_usuario"), 0));
+        }
+        Map<Integer, Map<String, Object>> usersById = userClient.publicUsersById(ids);
+        for (Map<String, Object> pedido : pedidos) {
+            Map<String, Object> user = usersById.get(Utils.intValue(pedido.get("id_usuario"), 0));
+            if (user == null) {
+                pedido.put("cliente_nombre", null);
+                pedido.put("cliente_telefono", null);
+            } else {
+                pedido.put("cliente_nombre", fullName(user));
+                pedido.put("cliente_telefono", user.get("telefono"));
+            }
+        }
+    }
+
+    private String fullName(Map<String, Object> user) {
+        String nombre = Utils.stringValue(user.get("nombre"), "").trim();
+        String apellido = Utils.stringValue(user.get("apellido"), "").trim();
+        return (nombre + " " + apellido).trim();
     }
 
     private int resolverUbicacionEntrega(Map<String, Object> body, int idTienda, String tipo) {
@@ -257,11 +354,86 @@ public class OrderService {
         if (nombreLugar.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selecciona una ubicacion o registra un nuevo lugar de entrega");
         }
-        jdbc.update(
-                "INSERT INTO ubicacion (nombre_lugar, referencia, tipo_ubicacion, estado) VALUES (?, ?, 'entrega', 1)",
+        return jdbc.queryForObject(
+                "INSERT INTO ubicacion (nombre_lugar, referencia, tipo_ubicacion, estado) " +
+                        "OUTPUT INSERTED.id_ubicacion VALUES (?, ?, 'entrega', 1)",
+                Integer.class,
                 nombreLugar,
                 referencia
         );
-        return jdbc.queryForObject("SELECT last_insert_rowid()", Integer.class);
+    }
+
+    private double calcularCostoEnvio(int idTienda, int idUbicacionEntrega) {
+        Map<String, Object> locations = ubicacionesParaEnvio(idTienda, idUbicacionEntrega);
+        return calcularCostoEnvio(
+                textoUbicacion(locations.get("origen"), locations.get("referencia_origen")),
+                textoUbicacion(locations.get("destino"), locations.get("referencia_destino"))
+        );
+    }
+
+    private Map<String, Object> ubicacionesParaEnvio(int idTienda, int idUbicacionEntrega) {
+        return jdbc.queryForMap(
+                "SELECT ut.nombre_lugar AS origen, ut.referencia AS referencia_origen, " +
+                        "ue.nombre_lugar AS destino, ue.referencia AS referencia_destino " +
+                        "FROM tienda t " +
+                        "JOIN ubicacion ut ON ut.id_ubicacion = t.id_ubicacion " +
+                        "JOIN ubicacion ue ON ue.id_ubicacion = ? " +
+                        "WHERE t.id_tienda = ?",
+                idUbicacionEntrega,
+                idTienda
+        );
+    }
+
+    private double calcularCostoEnvio(String originValue, String destinationValue) {
+        String origin = normalizeLocation(originValue);
+        String destination = normalizeLocation(destinationValue);
+        String originZone = specialZone(origin);
+        String destinationZone = specialZone(destination);
+
+        if (originZone != null && destinationZone != null && !originZone.equals(destinationZone)) {
+            return 1.5;
+        }
+        if (originZone == null && destinationZone != null) {
+            return 1.0;
+        }
+        return 0.5;
+    }
+
+    private String specialZone(String location) {
+        if (location.contains("gastronomia") || location.contains("automotriz")) {
+            return "automotriz_gastronomia";
+        }
+        if (location.contains("deportes")) {
+            return "deportes";
+        }
+        return null;
+    }
+
+    private String textoUbicacion(Object nombre, Object referencia) {
+        return (Utils.stringValue(nombre, "") + " " + Utils.stringValue(referencia, "")).trim();
+    }
+
+    private String normalizeLocation(String value) {
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        return normalized.toLowerCase(Locale.ROOT).trim();
+    }
+
+    private boolean descuentoActivo(Map<String, Object> product) {
+        double percentage = Utils.doubleValue(product.get("descuento_porcentaje"), 0);
+        String startValue = Utils.stringValue(product.get("descuento_inicio"), "").trim();
+        String endValue = Utils.stringValue(product.get("descuento_fin"), "").trim();
+        if (percentage <= 0 || startValue.isEmpty() || endValue.isEmpty()) {
+            return false;
+        }
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+            LocalTime start = LocalTime.parse(startValue, formatter);
+            LocalTime end = LocalTime.parse(endValue, formatter);
+            LocalTime now = LocalTime.now(ZoneId.of("America/Guayaquil"));
+            return start.isBefore(end) && !now.isBefore(start) && now.isBefore(end);
+        } catch (DateTimeParseException error) {
+            return false;
+        }
     }
 }

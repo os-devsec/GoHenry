@@ -7,47 +7,48 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 @Service
 public class DeliveryService {
     private final JdbcTemplate jdbc;
     private final AuthService authService;
+    private final UserClient userClient;
 
-    public DeliveryService(JdbcTemplate jdbc, AuthService authService) {
+    public DeliveryService(JdbcTemplate jdbc, AuthService authService, UserClient userClient) {
         this.jdbc = jdbc;
         this.authService = authService;
+        this.userClient = userClient;
     }
 
     public List<Map<String, Object>> disponibles(Map<String, Object> user) {
         if (!authService.isPlatformAdmin(user)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo el admin de plataforma puede ver repartidores");
         }
-        return jdbc.queryForList("SELECT id_usuario, nombre, apellido, correo, telefono, acepta_repartos, estado FROM usuario WHERE acepta_repartos = 1 AND estado = 1 ORDER BY id_usuario");
+        return userClient.deliveryUsers();
     }
 
     public List<Map<String, Object>> asignacionesPorRepartidor(int idUsuario, Map<String, Object> user) {
         if (!authService.isPlatformAdmin(user) && idUsuario != Utils.intValue(user.get("id_usuario"), 0)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Solo puedes ver tus asignaciones");
         }
-        return jdbc.queryForList(baseSql() + " WHERE (v.id_repartidor = ? OR v.estado_asignacion = 'pendiente') ORDER BY v.id_asignacion DESC", idUsuario);
+        return assignments(baseSql() + " WHERE (ar.id_usuario = ? OR ar.estado_asignacion = 'pendiente') ORDER BY ar.id_asignacion DESC", idUsuario);
     }
 
     public List<Map<String, Object>> asignaciones(Integer pedido, Map<String, Object> user) {
         if (pedido != null) {
             if (!authService.isPlatformAdmin(user)) {
-                return jdbc.queryForList(baseSql() + " WHERE v.id_pedido = ? AND v.id_repartidor = ? ORDER BY v.id_asignacion DESC", pedido, Utils.intValue(user.get("id_usuario"), 0));
+                return assignments(baseSql() + " WHERE ar.id_pedido = ? AND ar.id_usuario = ? ORDER BY ar.id_asignacion DESC", pedido, Utils.intValue(user.get("id_usuario"), 0));
             }
-            return jdbc.queryForList(baseSql() + " WHERE v.id_pedido = ? ORDER BY v.id_asignacion DESC", pedido);
+            return assignments(baseSql() + " WHERE ar.id_pedido = ? ORDER BY ar.id_asignacion DESC", pedido);
         }
         if (!authService.isPlatformAdmin(user)) {
             if (!Utils.boolValue(user.get("acepta_repartos"))) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Activa modo delivery para ver asignaciones");
             }
-            return jdbc.queryForList(baseSql() + " WHERE (v.id_repartidor = ? OR v.estado_asignacion = 'pendiente') ORDER BY v.id_asignacion DESC", Utils.intValue(user.get("id_usuario"), 0));
+            return assignments(baseSql() + " WHERE (ar.id_usuario = ? OR ar.estado_asignacion = 'pendiente') ORDER BY ar.id_asignacion DESC", Utils.intValue(user.get("id_usuario"), 0));
         }
-        return jdbc.queryForList(baseSql() + " ORDER BY v.id_asignacion DESC");
+        return assignments(baseSql() + " ORDER BY ar.id_asignacion DESC");
     }
 
     public Map<String, Object> crearAsignacion(Map<String, Object> body, Map<String, Object> user) {
@@ -72,15 +73,18 @@ public class DeliveryService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "El pedido aun no esta listo para asignar delivery");
         }
         List<Map<String, Object>> existing = jdbc.queryForList(
-                "SELECT id_asignacion FROM asignacion_repartidor WHERE id_pedido = ? AND estado_asignacion IN ('pendiente', 'aceptada', 'en_camino') ORDER BY id_asignacion DESC LIMIT 1",
+                "SELECT TOP 1 id_asignacion FROM asignacion_repartidor WHERE id_pedido = ? AND estado_asignacion IN ('pendiente', 'aceptada', 'en_camino') ORDER BY id_asignacion DESC",
                 idPedido
         );
         if (!existing.isEmpty()) {
             return asignacion(Utils.intValue(existing.get(0).get("id_asignacion"), 0));
         }
-        jdbc.update("INSERT INTO asignacion_repartidor (id_pedido, id_usuario, estado_asignacion, observacion) VALUES (?, ?, 'pendiente', ?)",
-                idPedido, null, Utils.stringValue(body.get("observacion"), null));
-        int id = jdbc.queryForObject("SELECT last_insert_rowid()", Integer.class);
+        int id = jdbc.queryForObject(
+                "INSERT INTO asignacion_repartidor (id_pedido, id_usuario, estado_asignacion, observacion) " +
+                        "OUTPUT INSERTED.id_asignacion VALUES (?, ?, 'pendiente', ?)",
+                Integer.class,
+                idPedido, null, Utils.stringValue(body.get("observacion"), null)
+        );
         return asignacion(id);
     }
 
@@ -106,21 +110,13 @@ public class DeliveryService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La entrega ya fue tomada o no esta pendiente");
         }
         Map<String, Object> entrega = jdbc.queryForMap(
-                "SELECT ar.id_pedido, " +
-                        "COALESCE(ut.nombre_lugar, '') || ' ' || COALESCE(ut.referencia, '') AS ubicacion_tienda, " +
-                        "COALESCE(ue.nombre_lugar, '') || ' ' || COALESCE(ue.referencia, '') AS ubicacion_entrega " +
+                "SELECT ar.id_pedido, p.costo_envio " +
                         "FROM asignacion_repartidor ar " +
                         "JOIN pedido p ON p.id_pedido = ar.id_pedido " +
-                        "JOIN tienda t ON t.id_tienda = p.id_tienda " +
-                        "JOIN ubicacion ut ON ut.id_ubicacion = t.id_ubicacion " +
-                        "JOIN ubicacion ue ON ue.id_ubicacion = p.id_ubicacion_entrega " +
                         "WHERE ar.id_asignacion = ?",
                 id
         );
-        double monto = calcularComision(
-                Utils.stringValue(entrega.get("ubicacion_tienda"), ""),
-                Utils.stringValue(entrega.get("ubicacion_entrega"), "")
-        );
+        double monto = Utils.doubleValue(entrega.get("costo_envio"), 0);
         jdbc.update(
                 "INSERT INTO comision (id_usuario, id_pedido, monto, estado_comision) VALUES (?, ?, ?, 'pendiente')",
                 idUsuario,
@@ -154,6 +150,11 @@ public class DeliveryService {
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La entrega ya no se puede cancelar");
         }
+        jdbc.update(
+                "UPDATE comision SET estado_comision = 'cancelada' " +
+                        "WHERE id_pedido = (SELECT id_pedido FROM asignacion_repartidor WHERE id_asignacion = ?)",
+                id
+        );
         return asignacion(id);
     }
 
@@ -166,6 +167,11 @@ public class DeliveryService {
         if (updated == 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La entrega debe estar en camino antes de marcarla entregada");
         }
+        jdbc.update(
+                "UPDATE comision SET estado_comision = 'pagada' " +
+                        "WHERE id_pedido = (SELECT id_pedido FROM asignacion_repartidor WHERE id_asignacion = ?)",
+                id
+        );
         actualizarPedido(id, "entregado");
         return asignacion(id);
     }
@@ -173,31 +179,67 @@ public class DeliveryService {
     private void actualizarPedido(int idAsignacion, String estado) {
         Integer idPedido = jdbc.queryForObject("SELECT id_pedido FROM asignacion_repartidor WHERE id_asignacion = ?", Integer.class, idAsignacion);
         Integer estadoId = jdbc.queryForObject("SELECT id_estado_pedido FROM estado_pedido WHERE nombre = ?", Integer.class, estado);
-        jdbc.update("UPDATE V_Actualizar_Estado_Pedido SET id_estado_pedido = ? WHERE id_pedido = ?", estadoId, idPedido);
+        jdbc.update("UPDATE pedido SET id_estado_pedido = ? WHERE id_pedido = ?", estadoId, idPedido);
     }
 
     private Map<String, Object> asignacion(int id) {
-        return jdbc.queryForMap(baseSql() + " WHERE v.id_asignacion = ?", id);
+        List<Map<String, Object>> rows = assignments(baseSql() + " WHERE ar.id_asignacion = ?", id);
+        if (rows.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Asignacion no encontrada");
+        }
+        return rows.get(0);
     }
 
     private String baseSql() {
-        return "SELECT v.id_asignacion, v.id_pedido, v.id_repartidor, v.repartidor, " +
-                "v.estado_asignacion, v.tipo_pedido, v.fecha_pedido, v.tienda, v.cliente, " +
-                "CASE WHEN v.estado_asignacion IN ('aceptada', 'en_camino') THEN v.telefono_cliente ELSE NULL END AS telefono_cliente, " +
-                "v.punto_entrega, v.referencia_entrega, v.subtotal, v.total_descuento, v.total, " +
-                "v.fecha_asignacion, v.fecha_aceptacion, v.fecha_entrega, v.observacion, " +
-                "v.repartidor AS nombre, '' AS apellido, " +
-                "v.tienda AS tienda_nombre " +
-                "FROM V_Ordenes_Repartidor v";
+        return "SELECT ar.id_asignacion, ar.id_pedido, ar.id_usuario AS id_repartidor, " +
+                "p.id_usuario AS id_cliente, ar.estado_asignacion, p.tipo_pedido, p.fecha_pedido, " +
+                "t.nombre AS tienda, t.logo_url AS logo_tienda, " +
+                "u.nombre_lugar AS punto_entrega, u.referencia AS referencia_entrega, " +
+                "p.subtotal, p.total_descuento, p.total, p.total AS costo_pedido, " +
+                "p.costo_envio, ROUND(p.total + p.costo_envio, 2) AS total_con_envio, " +
+                "COALESCE(c.monto, p.costo_envio) AS ganancia_envio, " +
+                "ar.fecha_asignacion, ar.fecha_aceptacion, ar.fecha_entrega, ar.observacion, " +
+                "t.nombre AS tienda_nombre " +
+                "FROM asignacion_repartidor ar " +
+                "JOIN pedido p ON ar.id_pedido = p.id_pedido " +
+                "JOIN tienda t ON p.id_tienda = t.id_tienda " +
+                "JOIN ubicacion u ON p.id_ubicacion_entrega = u.id_ubicacion " +
+                "LEFT JOIN comision c ON c.id_pedido = p.id_pedido AND c.id_usuario = ar.id_usuario";
     }
 
-    private double calcularComision(String ubicacionTienda, String ubicacionEntrega) {
-        return esZonaEspecial(ubicacionTienda) && !esZonaEspecial(ubicacionEntrega) ? 1.0 : 0.5;
+    private List<Map<String, Object>> assignments(String sql, Object... args) {
+        List<Map<String, Object>> rows = jdbc.queryForList(sql, args);
+        enrichAssignmentsWithUsers(rows);
+        return rows;
     }
 
-    private boolean esZonaEspecial(String value) {
-        String text = value == null ? "" : value.toLowerCase(Locale.ROOT);
-        return text.contains("automotriz") || text.contains("gastronomia");
+    private void enrichAssignmentsWithUsers(List<Map<String, Object>> assignments) {
+        List<Integer> ids = new java.util.ArrayList<>();
+        for (Map<String, Object> assignment : assignments) {
+            ids.add(Utils.intValue(assignment.get("id_repartidor"), 0));
+            ids.add(Utils.intValue(assignment.get("id_cliente"), 0));
+        }
+        Map<Integer, Map<String, Object>> usersById = userClient.publicUsersById(ids);
+        for (Map<String, Object> assignment : assignments) {
+            Map<String, Object> deliveryUser = usersById.get(Utils.intValue(assignment.get("id_repartidor"), 0));
+            Map<String, Object> clientUser = usersById.get(Utils.intValue(assignment.get("id_cliente"), 0));
+            String deliveryName = deliveryUser == null ? null : fullName(deliveryUser);
+            assignment.put("repartidor", deliveryName);
+            assignment.put("nombre", deliveryName);
+            assignment.put("apellido", "");
+            assignment.put("cliente", clientUser == null ? null : fullName(clientUser));
+            if (clientUser != null && Utils.set("aceptada", "en_camino").contains(Utils.stringValue(assignment.get("estado_asignacion"), ""))) {
+                assignment.put("telefono_cliente", clientUser.get("telefono"));
+            } else {
+                assignment.put("telefono_cliente", null);
+            }
+        }
+    }
+
+    private String fullName(Map<String, Object> user) {
+        String nombre = Utils.stringValue(user.get("nombre"), "").trim();
+        String apellido = Utils.stringValue(user.get("apellido"), "").trim();
+        return (nombre + " " + apellido).trim();
     }
 
     private void requireAssignedDeliveryUser(int idAsignacion, Map<String, Object> user) {

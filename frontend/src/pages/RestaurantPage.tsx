@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MenuItem from '../components/restaurant/MenuItem.tsx';
@@ -8,7 +8,16 @@ export default function RestaurantPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { restaurants, addToCart } = useApp();
+  const [categoryId, setCategoryId] = useState('');
   const restaurant = restaurants.find((entry) => entry.id === id);
+  const menuCategories = useMemo(() => {
+    const byId = new Map();
+    restaurant?.menu.forEach((product) => product.categories.forEach((category) => byId.set(category.id_categoria, category)));
+    return Array.from(byId.values()).filter((category: any) => category.nombre?.toLowerCase() !== 'extra');
+  }, [restaurant]);
+  const visibleMenu = restaurant?.menu.filter((product) =>
+    !product.isExtra && (!categoryId || product.categoryIds.includes(Number(categoryId)))
+  ) || [];
 
   if (!restaurant) {
     return (
@@ -44,9 +53,20 @@ export default function RestaurantPage() {
       </section>
 
       <section aria-labelledby="restaurant-menu-title" className="space-y-3">
-        <h2 id="restaurant-menu-title" className="text-2xl font-black text-stone-950">Menu</h2>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <h2 id="restaurant-menu-title" className="text-2xl font-black text-stone-950">Menu</h2>
+          <label className="block min-w-56 space-y-1">
+            <span className="text-sm font-bold text-stone-600">Categoria</span>
+            <select className="field" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+              <option value="">Todas</option>
+              {menuCategories.map((category: any) => (
+                <option key={category.id_categoria} value={category.id_categoria}>{category.nombre}</option>
+              ))}
+            </select>
+          </label>
+        </div>
         <ul className="grid gap-3 md:grid-cols-2">
-          {restaurant.menu.map((item) => (
+          {visibleMenu.map((item) => (
             <li key={item.id}>
               <MenuItem
                 item={item}
@@ -55,6 +75,11 @@ export default function RestaurantPage() {
               />
             </li>
           ))}
+          {!visibleMenu.length && (
+            <li className="rounded-lg border border-dashed border-stone-200 bg-white p-5 text-sm text-stone-500 md:col-span-2">
+              No hay productos disponibles en esta categoria.
+            </li>
+          )}
         </ul>
       </section>
     </div>

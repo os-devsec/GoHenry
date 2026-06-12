@@ -5,10 +5,9 @@ from fastapi import HTTPException, UploadFile
 from sqlmodel import Session
 
 from .config import STORE_LOGO_DIR
-from . import repositories
+from . import repositories, user_client
 from .schemas import PersonalRequest, TiendaRequest
 from .security import require_platform_admin, require_store_role
-from .staff_client import resolve_staff_user
 
 
 def list_stores(session: Session) -> list[dict[str, Any]]:
@@ -55,7 +54,9 @@ async def upload_store_logo(
 
 def list_store_staff(session: Session, id_tienda: int, user: dict[str, Any]) -> list[dict[str, Any]]:
     require_store_role(session, id_tienda, user, {"administrador", "empleado"})
-    return repositories.list_staff(session, id_tienda)
+    staff_memberships = repositories.list_store_staff(session, id_tienda)
+    users_by_id = user_client.lookup_users([staff.id_usuario for staff in staff_memberships])
+    return [store_staff_row(staff.model_dump(), users_by_id.get(staff.id_usuario, {})) for staff in staff_memberships]
 
 
 def add_store_staff(session: Session, id_tienda: int, payload: PersonalRequest, user: dict[str, Any]) -> dict[str, Any]:
@@ -65,11 +66,34 @@ def add_store_staff(session: Session, id_tienda: int, payload: PersonalRequest, 
     if not repositories.get_active_store(session, id_tienda):
         raise HTTPException(status_code=404, detail="Tienda no encontrada")
 
-    staff_user = resolve_staff_user(payload)
-    return repositories.upsert_staff(session, id_tienda, staff_user["id_usuario"], payload.cargo)
+    staff_user = user_client.resolve_staff_user(payload)
+    staff = repositories.upsert_store_staff(session, id_tienda, staff_user["id_usuario"], payload.cargo)
+    return store_staff_row(staff.model_dump(), staff_user)
 
 
 def remove_store_staff(session: Session, id_tienda: int, id_tienda_usuario: int, user: dict[str, Any]) -> dict[str, bool]:
     require_store_role(session, id_tienda, user, {"administrador"})
-    repositories.remove_staff(session, id_tienda, id_tienda_usuario)
+    repositories.remove_store_staff(session, id_tienda, id_tienda_usuario)
     return {"ok": True}
+
+
+def has_store_staff_role(session: Session, id_tienda: int, id_usuario: int, roles: list[str]) -> dict[str, bool]:
+    allowed_roles = {role for role in roles if role in {"administrador", "empleado"}}
+    if not allowed_roles:
+        return {"allowed": False}
+    return {"allowed": repositories.has_store_role(session, id_tienda, id_usuario, allowed_roles)}
+
+
+def list_user_store_staff(session: Session, id_usuario: int) -> list[dict[str, Any]]:
+    return repositories.list_user_store_staff(session, id_usuario)
+
+
+def store_staff_row(staff: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **staff,
+        "nombre": user.get("nombre"),
+        "apellido": user.get("apellido"),
+        "correo": user.get("correo"),
+        "telefono": user.get("telefono"),
+        "rol_usuario": user.get("rol_usuario"),
+    }

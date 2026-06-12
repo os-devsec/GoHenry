@@ -1,20 +1,37 @@
 package main
 
 import (
+	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 )
 
-func sqlitePath() string {
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		return "../../database/integrador.db"
+func databaseURL() string {
+	if directURL := os.Getenv("SQLSERVER_DSN"); directURL != "" {
+		return directURL
 	}
-	if strings.HasPrefix(url, "sqlite:///") {
-		return strings.TrimPrefix(url, "sqlite:///")
+	connectionURL := &url.URL{
+		Scheme: "sqlserver",
+		User:   url.UserPassword(requiredEnv("RDS_USER"), requiredEnv("RDS_PASSWORD")),
+		Host:   net.JoinHostPort(requiredEnv("RDS_HOST"), fallback(os.Getenv("RDS_PORT"), "1433")),
 	}
-	return url
+	query := connectionURL.Query()
+	query.Set("database", requiredEnv("RDS_DB"))
+	query.Set("encrypt", "true")
+	query.Set("TrustServerCertificate", "false")
+	connectionURL.RawQuery = query.Encode()
+	return connectionURL.String()
+}
+
+func requiredEnv(name string) string {
+	value := os.Getenv(name)
+	if value == "" {
+		panic(fmt.Sprintf("missing required environment variable: %s", name))
+	}
+	return value
 }
 
 func fallback(value string, alternative string) string {

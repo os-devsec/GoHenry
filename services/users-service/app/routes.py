@@ -5,7 +5,7 @@ from pydantic import EmailStr
 from sqlmodel import Session
 
 from .database import get_session
-from .schemas import AccountUpdateRequest, InternalUserRequest, PlatformAdminRequest, RepartosRequest
+from .schemas import AccountUpdateRequest, InternalUserRequest, InternalUsersLookupRequest, PlatformAdminRequest, RepartosRequest
 from .security import current_user, require_internal_service
 from . import services
 
@@ -33,6 +33,32 @@ def create_or_get_internal_user(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     return services.create_or_get_internal_user(session, payload)
+
+
+@router.get("/internal/usuarios/repartidores")
+def list_internal_delivery_users(
+    _internal: None = Depends(require_internal_service),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return services.list_delivery_users(session)
+
+
+@router.post("/internal/usuarios/lookup")
+def lookup_internal_users(
+    payload: InternalUsersLookupRequest,
+    _internal: None = Depends(require_internal_service),
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return services.lookup_internal_users(session, payload)
+
+
+@router.get("/internal/usuarios/{id_usuario}")
+def get_internal_user(
+    id_usuario: int,
+    _internal: None = Depends(require_internal_service),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    return services.get_internal_user(session, id_usuario)
 
 
 @router.post("/api/v1/admin-plataforma")

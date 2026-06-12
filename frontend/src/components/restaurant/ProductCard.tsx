@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Plus } from 'lucide-react';
+import { Clock3, Eye, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatCurrency } from '../../utils/format.ts';
 
@@ -11,6 +11,16 @@ export default function ProductCard({ product, restaurant, onAdd }) {
         <p className="text-xs font-bold text-wine-600">{restaurant.name}</p>
         <h3 className="mt-1 font-black">{product.name}</h3>
         <p className="mt-1 line-clamp-2 text-sm text-stone-500">{product.description}</p>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {product.categories?.map((category) => (
+            <span key={category.id_categoria} className="rounded-full bg-stone-100 px-2 py-1 text-xs font-bold text-stone-600">{category.nombre}</span>
+          ))}
+        </div>
+        {product.discountActive && (
+          <p className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-wine-700">
+            <Clock3 size={14} /> Oferta activa hasta {product.discountEnd}
+          </p>
+        )}
       </div>
       <div className="mt-4 flex items-center justify-between gap-2">
         <span>

@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from .config import JWT_ALGORITHM, JWT_SECRET
 from .database import engine
-from . import repositories
+from . import repositories, user_client
 
 
 def hash_password(password: str) -> str:
@@ -45,4 +45,4 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
         user = repositories.get_user_by_id(session, payload["sub"], active_only=True)
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
-        return repositories.public_user(session, user)
+        return user_client.get_public_user(user.id_usuario or 0, token)

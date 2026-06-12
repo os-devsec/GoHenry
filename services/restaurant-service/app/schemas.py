@@ -19,3 +19,8 @@ class PersonalRequest(BaseModel):
     correo: EmailStr | None = None
     telefono: str | None = None
     password: str | None = None
+
+
+class StoreStaffRoleRequest(BaseModel):
+    id_usuario: int
+    roles: list[str]

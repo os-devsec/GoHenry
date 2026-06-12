@@ -1,20 +1,6 @@
 from sqlmodel import Field, SQLModel
 
 
-class Usuario(SQLModel, table=True):
-    __tablename__ = "usuario"
-
-    id_usuario: int | None = Field(default=None, primary_key=True)
-    nombre: str
-    apellido: str
-    correo: str
-    telefono: str | None = None
-    password_hash: str
-    rol_usuario: str = "cliente"
-    acepta_repartos: bool = False
-    estado: bool = True
-
-
 class Ubicacion(SQLModel, table=True):
     __tablename__ = "ubicacion"
 
@@ -38,7 +24,7 @@ class Tienda(SQLModel, table=True):
     estado: bool = True
 
 
-class TiendaUsuario(SQLModel, table=True):
+class StoreStaff(SQLModel, table=True):
     __tablename__ = "tienda_usuario"
 
     id_tienda_usuario: int | None = Field(default=None, primary_key=True)

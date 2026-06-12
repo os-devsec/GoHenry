@@ -1,21 +1,39 @@
 import React, { useEffect, useState } from 'react';
-import { Check, CreditCard, Minus, Plus, ShoppingBag } from 'lucide-react';
+import { Banknote, Bike, Check, Landmark, Minus, PackageCheck, Plus, ShoppingBag, Smartphone } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import IconButton from '../components/common/IconButton.tsx';
 import SummaryRow from '../components/common/SummaryRow.tsx';
 import { api } from '../api.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { formatCurrency } from '../utils/format.ts';
+import { calculateDeliveryFee } from '../utils/delivery.ts';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { cart, subtotal, totalDiscount, total, updateQuantity, checkout } = useApp();
+  const [orderType, setOrderType] = useState('delivery');
   const [locations, setLocations] = useState<any[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  const [paymentMethodId, setPaymentMethodId] = useState('');
   const [locationMode, setLocationMode] = useState('existing');
   const [locationId, setLocationId] = useState('');
   const [placeName, setPlaceName] = useState('');
   const [reference, setReference] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [quotingDelivery, setQuotingDelivery] = useState(false);
+  const origin = [cart[0]?.restaurantLocation, cart[0]?.restaurantReference].filter(Boolean).join(' ');
+  const storeId = cart[0]?.restaurantId || cart[0]?.id_tienda || 0;
+  const selectedLocation = locations.find((location) => String(location.id_ubicacion) === locationId);
+  const destinationName = locationMode === 'existing'
+    ? selectedLocation?.nombre_lugar || ''
+    : placeName;
+  const destination = locationMode === 'existing'
+    ? [selectedLocation?.nombre_lugar, selectedLocation?.referencia].filter(Boolean).join(' ')
+    : [placeName, reference].filter(Boolean).join(' ');
+  const totalWithDelivery = total + deliveryFee;
+  const selectedPayment = paymentMethods.find((method) => String(method.id_metodo_pago) === paymentMethodId);
 
   useEffect(() => {
     api.get('/api/v1/ubicaciones?tipo=entrega')
@@ -25,18 +43,77 @@ export default function CheckoutPage() {
         else setLocationMode('new');
       })
       .catch(() => setLocationMode('new'));
+    api.get('/api/v1/metodos-pago')
+      .then((data) => {
+        const allowed = data.filter((method) =>
+          ['deuna', 'transferencia', 'efectivo'].includes(method.nombre.toLowerCase())
+        );
+        setPaymentMethods(allowed);
+        if (allowed.length) setPaymentMethodId(String(allowed[0].id_metodo_pago));
+      })
+      .catch(() => setPaymentMethods([]));
   }, []);
+
+  useEffect(() => {
+    if (orderType !== 'delivery' || !cart.length) {
+      setDeliveryFee(0);
+      return undefined;
+    }
+    if (locationMode === 'new') {
+      setDeliveryFee(calculateDeliveryFee(origin, placeName));
+      return undefined;
+    }
+    if (!storeId || !locationId) {
+      setDeliveryFee(0);
+      return undefined;
+    }
+
+    let active = true;
+    setQuotingDelivery(true);
+    api.post('/api/v1/pedidos/cotizar-envio', {
+      id_tienda: Number(storeId),
+      id_ubicacion_entrega: Number(locationId)
+    })
+      .then((quote) => {
+        if (active) setDeliveryFee(Number(quote.costo_envio || 0));
+      })
+      .catch(() => {
+        if (active) setDeliveryFee(calculateDeliveryFee(origin, destination));
+      })
+      .finally(() => {
+        if (active) setQuotingDelivery(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [orderType, locationMode, locationId, storeId, origin, placeName, reference, destination, cart.length]);
 
   const confirmOrder = async () => {
     if (!cart.length) return;
-    if (locationMode === 'existing' && !locationId) return;
-    if (locationMode === 'new' && !placeName.trim()) return;
-    setSubmitting(true);
-    await checkout(locationMode === 'existing'
-      ? { id_ubicacion_entrega: Number(locationId) }
-      : { nombre_lugar: placeName.trim(), referencia: reference.trim() || null });
-    setSubmitting(false);
-    navigate('/pedido');
+    if (!paymentMethodId) return;
+    if (orderType === 'delivery' && locationMode === 'existing' && !locationId) return;
+    if (orderType === 'delivery' && locationMode === 'new' && !placeName.trim()) return;
+    try {
+      setError('');
+      setSubmitting(true);
+      const locationPayload = orderType === 'pickup'
+        ? {}
+        : locationMode === 'existing'
+          ? { id_ubicacion_entrega: Number(locationId) }
+          : { nombre_lugar: placeName.trim(), referencia: reference.trim() || null };
+      await checkout({
+        tipo_pedido: orderType,
+        id_metodo_pago: Number(paymentMethodId),
+        estado_pago: selectedPayment?.nombre.toLowerCase() === 'efectivo' ? 'pendiente' : 'pagado',
+        ...locationPayload
+      });
+      navigate('/pedido');
+    } catch (apiError) {
+      setError(apiError.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -80,9 +157,28 @@ export default function CheckoutPage() {
         <dl className="mt-4 grid grid-cols-2 gap-y-3 text-sm">
           <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
           <SummaryRow label="Descuentos" value={`-${formatCurrency(totalDiscount)}`} />
-          <SummaryRow label="Total" value={formatCurrency(total)} strong />
+          <SummaryRow label="Envio" value={quotingDelivery ? 'Calculando...' : formatCurrency(deliveryFee)} />
+          <SummaryRow label="Total" value={formatCurrency(totalWithDelivery)} strong />
         </dl>
         <div className="mt-5 space-y-3">
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-black text-stone-700">Como recibiras tu pedido</legend>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setOrderType('delivery')} className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-black ${orderType === 'delivery' ? 'bg-wine-600 text-white' : 'bg-stone-100 text-stone-600'}`}>
+                <Bike size={18} /> Entrega
+              </button>
+              <button type="button" onClick={() => setOrderType('pickup')} className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-black ${orderType === 'pickup' ? 'bg-wine-600 text-white' : 'bg-stone-100 text-stone-600'}`}>
+                <PackageCheck size={18} /> Recoger en tienda
+              </button>
+            </div>
+          </fieldset>
+          {orderType === 'pickup' && (
+            <p className="rounded-lg bg-maize-100 px-4 py-3 text-sm font-bold text-wine-900">
+              Retiras el pedido en {cart[0]?.restaurantName || 'la tienda seleccionada'}. No se cobrara envio ni se solicitara repartidor.
+            </p>
+          )}
+          {orderType === 'delivery' && (
+          <>
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setLocationMode('existing')} className={`rounded-full px-4 py-2 text-sm font-black ${locationMode === 'existing' ? 'bg-wine-600 text-white' : 'bg-stone-100 text-stone-600'}`}>Lugar existente</button>
             <button type="button" onClick={() => setLocationMode('new')} className={`rounded-full px-4 py-2 text-sm font-black ${locationMode === 'new' ? 'bg-wine-600 text-white' : 'bg-stone-100 text-stone-600'}`}>Nuevo lugar</button>
@@ -90,7 +186,11 @@ export default function CheckoutPage() {
           {locationMode === 'existing' ? (
             <label className="block space-y-2">
               <span className="text-sm font-bold text-stone-700">Ubicacion de entrega</span>
-              <select className="field" value={locationId} onChange={(event) => setLocationId(event.target.value)}>
+              <select
+                className="field"
+                value={locationId}
+                onChange={(event) => setLocationId(String(event.currentTarget.value))}
+              >
                 {locations.map((location) => (
                   <option key={location.id_ubicacion} value={location.id_ubicacion}>
                     {location.nombre_lugar}{location.referencia ? ` - ${location.referencia}` : ''}
@@ -110,11 +210,34 @@ export default function CheckoutPage() {
               </label>
             </>
           )}
-          <button type="button" aria-pressed="true" className="flex w-full items-center justify-between rounded-lg border border-stone-200 px-4 py-3 text-left font-bold">
-            <span className="inline-flex items-center gap-2"><CreditCard size={18} /> Tarjeta terminada en 4242</span>
-            <Check size={18} className="text-wine-600" />
-          </button>
-          <button type="button" onClick={confirmOrder} disabled={!cart.length || submitting} className="w-full rounded-full bg-wine-600 px-5 py-3 font-black text-white transition hover:bg-wine-700 disabled:bg-stone-300">
+          {destinationName && (
+            <p aria-live="polite" className="rounded-lg bg-stone-50 px-4 py-3 text-sm text-stone-600">
+              <span className="font-black text-stone-800">Ruta calculada:</span>{' '}
+              {cart[0]?.restaurantLocation || 'Tienda'} a {destinationName}. Envio:{' '}
+              <span className="font-black text-wine-700">{quotingDelivery ? 'Calculando...' : formatCurrency(deliveryFee)}</span>
+            </p>
+          )}
+          </>
+          )}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-black text-stone-700">Metodo de pago</legend>
+            {paymentMethods.map((method) => {
+              const selected = String(method.id_metodo_pago) === paymentMethodId;
+              const Icon = method.nombre === 'DeUna' ? Smartphone : method.nombre === 'Transferencia' ? Landmark : Banknote;
+              return (
+                <label key={method.id_metodo_pago} className={`flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 font-bold ${selected ? 'border-wine-600 bg-wine-50 text-wine-900' : 'border-stone-200 text-stone-600'}`}>
+                  <span className="inline-flex items-center gap-2">
+                    <input type="radio" name="payment-method" value={method.id_metodo_pago} checked={selected} onChange={(event) => setPaymentMethodId(event.target.value)} className="accent-wine-600" />
+                    <Icon size={18} /> {method.nombre}
+                  </span>
+                  {selected && <Check size={18} className="text-wine-600" />}
+                </label>
+              );
+            })}
+            {!paymentMethods.length && <p className="text-sm text-red-600">No hay metodos de pago disponibles.</p>}
+          </fieldset>
+          {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p>}
+          <button type="button" onClick={confirmOrder} disabled={!cart.length || !paymentMethodId || submitting} className="w-full rounded-full bg-wine-600 px-5 py-3 font-black text-white transition hover:bg-wine-700 disabled:bg-stone-300">
             {submitting ? 'Confirmando...' : 'Confirmar pedido'}
           </button>
           <Link to="/pedido" className="block w-full rounded-full bg-maize-300 px-5 py-3 text-center font-black text-wine-900">

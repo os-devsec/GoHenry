@@ -59,6 +59,7 @@ export default function OrderPage() {
   }
 
   const repartidor = order.asignacion;
+  const isPickup = order.tipo_pedido === 'pickup';
   const phone = repartidor?.telefono?.replace(/\D/g, '');
   const whatsappUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola, soy del pedido #${order.id_pedido}.`)}` : '#';
   const assignmentStatus = repartidor?.estado_asignacion;
@@ -76,7 +77,7 @@ export default function OrderPage() {
       await refreshOrder(order.id_pedido).catch(() => null);
     }
   };
-  const steps = [
+  const deliverySteps = [
     { label: 'Pedido recibido', detail: `${order.tienda_nombre} recibio tu pedido.`, icon: CheckCircle2, done: true },
     {
       label: 'En preparacion',
@@ -103,13 +104,37 @@ export default function OrderPage() {
       done: delivered
     }
   ];
+  const pickupReady = ['listo_para_entrega', 'entregado'].includes(order.estado_nombre);
+  const pickupDelivered = order.estado_nombre === 'entregado';
+  const pickupSteps = [
+    { label: 'Pedido recibido', detail: `${order.tienda_nombre} recibio tu pedido.`, icon: CheckCircle2, done: true },
+    {
+      label: 'En preparacion',
+      detail: restaurantAccepted ? 'La tienda esta preparando tu pedido.' : 'Esperando aceptacion de la tienda.',
+      icon: Store,
+      done: restaurantAccepted
+    },
+    {
+      label: 'Listo para recoger',
+      detail: pickupReady ? `Puedes acercarte a ${order.tienda_nombre}.` : 'Te avisaremos cuando este listo.',
+      icon: PackageCheck,
+      done: pickupReady
+    },
+    {
+      label: 'Retirado',
+      detail: pickupDelivered ? 'Retiro confirmado por la tienda.' : 'Pendiente de retiro.',
+      icon: CheckCircle2,
+      done: pickupDelivered
+    }
+  ];
+  const steps = isPickup ? pickupSteps : deliverySteps;
 
   return (
     <div className="space-y-6">
       <section aria-labelledby="order-title" className="rounded-lg bg-wine-700 p-6 text-white shadow-soft">
         <p className="text-sm font-bold text-maize-300">Seguimiento</p>
         <h1 id="order-title" className="mt-1 text-3xl font-black">Pedido #{order.id_pedido}</h1>
-        <p className="mt-2 text-wine-50">Estado actual de entrega dentro del campus.</p>
+        <p className="mt-2 text-wine-50">{isPickup ? 'Estado actual de tu pedido para retirar en tienda.' : 'Estado actual de entrega dentro del campus.'}</p>
         {canCancel && (
           <button type="button" onClick={handleCancel} className="mt-5 rounded-full bg-white px-5 py-2.5 text-sm font-black text-wine-700">
             Cancelar pedido
@@ -121,7 +146,7 @@ export default function OrderPage() {
 
       <section className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
         <section aria-labelledby="delivery-status-title" className="rounded-lg bg-white p-5 shadow-sm">
-          <h2 id="delivery-status-title" className="text-xl font-black text-wine-900">Estado de entrega</h2>
+          <h2 id="delivery-status-title" className="text-xl font-black text-wine-900">{isPickup ? 'Estado del retiro' : 'Estado de entrega'}</h2>
           <ol className="mt-5 space-y-4">
             {steps.map((step, index) => {
               const Icon = step.icon;
@@ -147,10 +172,19 @@ export default function OrderPage() {
           <h2 id="order-summary-title" className="text-xl font-black text-wine-900">Resumen</h2>
           <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-2 gap-y-3 text-sm text-stone-600">
             <dt className="font-black">Restaurante:</dt><dd>{order.tienda_nombre}</dd>
+            <dt className="font-black">Modalidad:</dt><dd>{isPickup ? 'Recoger en tienda' : 'Entrega'}</dd>
             <dt className="font-black">Producto:</dt><dd>{order.items?.map((item) => item.nombre).join(', ')}</dd>
-            <dt className="font-black">Entrega:</dt><dd>{order.nombre_lugar_entrega}{order.referencia_entrega ? ` - ${order.referencia_entrega}` : ''}</dd>
+            <dt className="font-black">{isPickup ? 'Retiro:' : 'Entrega:'}</dt><dd>{order.nombre_lugar_entrega}{order.referencia_entrega ? ` - ${order.referencia_entrega}` : ''}</dd>
             <dt className="font-black">Descuento:</dt><dd>{formatCurrency(order.total_descuento || 0)}</dd>
-            <dt className="font-black">Total:</dt><dd>{formatCurrency(order.total || 0)}</dd>
+            <dt className="font-black">Productos:</dt><dd>{formatCurrency(order.total || 0)}</dd>
+            {!isPickup && <><dt className="font-black">Envio:</dt><dd>{formatCurrency(order.costo_envio || 0)}</dd></>}
+            {order.pago && (
+              <>
+                <dt className="font-black">Metodo de pago:</dt><dd>{order.pago.metodo_pago}</dd>
+                <dt className="font-black">Pago:</dt><dd className="capitalize">{order.pago.estado_pago}</dd>
+              </>
+            )}
+            <dt className="font-black">Total:</dt><dd>{formatCurrency(order.total_con_envio ?? order.total ?? 0)}</dd>
           </dl>
           {phone && (
             <a

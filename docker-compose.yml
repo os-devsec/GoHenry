@@ -1,31 +1,18 @@
 services:
   database-init:
-    image: python:3.12-slim
+    build: ./database
     profiles:
       - init
-    working_dir: /app
     env_file:
       - .env
-    volumes:
-      - ./database:/app/database
-      - ./database:/data
-    command: python database/init_sqlite.py
+    command: python init_sqlserver.py --reset
 
   api-gateway:
     build: ./api-gateway
     ports:
-      - "8000:8000"
+      - "${API_GATEWAY_PORT}:8000"
     env_file:
       - .env
-    environment:
-      AUTH_SERVICE_URL: http://auth-service:8000
-      USERS_SERVICE_URL: http://users-service:8000
-      RESTAURANT_SERVICE_URL: http://restaurant-service:8000
-      CATALOG_SERVICE_URL: http://catalog-service:8000
-      CART_SERVICE_URL: http://cart-service:8000
-      ORDERS_SERVICE_URL: http://orders-service:8000
-      PAYMENTS_SERVICE_URL: http://payments-service:8000
-      DELIVERY_SERVICE_URL: http://delivery-service:8000
     depends_on:
       - auth-service
       - users-service
@@ -35,58 +22,45 @@ services:
       - orders-service
       - payments-service
       - delivery-service
-    volumes:
-      - ./database:/data
 
   auth-service:
     build: ./services/auth_service
     ports:
-      - "8007:8000"
+      - "${AUTH_SERVICE_PORT}:8000"
     env_file:
       - .env
-    volumes:
-      - ./database:/data
 
   users-service:
     build: ./services/users-service
     ports:
-      - "8001:8000"
+      - "${USERS_SERVICE_PORT}:8000"
     env_file:
       - .env
-    volumes:
-      - ./database:/data
 
   restaurant-service:
     build: ./services/restaurant-service
     ports:
-      - "8008:8000"
+      - "${RESTAURANT_SERVICE_PORT}:8000"
     env_file:
       - .env
     volumes:
-      - ./database:/data
       - ./services/restaurant-service/uploads:/app/uploads
 
   catalog-service:
     build: ./services/catalog-service
     ports:
-      - "8002:8000"
+      - "${CATALOG_SERVICE_PORT}:8000"
     env_file:
       - .env
     volumes:
-      - ./database:/data
       - ./services/catalog-service/uploads:/app/uploads
 
   cart-service:
     build: ./services/cart-service
     ports:
-      - "8003:8000"
+      - "${CART_SERVICE_PORT}:8000"
     env_file:
       - .env
-    environment:
-      ORDERS_SERVICE_URL: http://orders-service:8000
-      CATALOG_SERVICE_URL: http://catalog-service:8000
-    volumes:
-      - ./database:/data
     depends_on:
       - catalog-service
       - orders-service
@@ -94,37 +68,25 @@ services:
   orders-service:
     build: ./services/orders-service
     ports:
-      - "8004:8000"
+      - "${ORDERS_SERVICE_PORT}:8000"
     env_file:
       - .env
-    environment:
-      SERVER_PORT: 8000
-    volumes:
-      - ./database:/data
 
   payments-service:
     build: ./services/payments-service
     ports:
-      - "8005:8000"
+      - "${PAYMENTS_SERVICE_PORT}:8000"
     env_file:
       - .env
-    environment:
-      SERVER_PORT: 8000
-    volumes:
-      - ./database:/data
     depends_on:
       - orders-service
 
   delivery-service:
     build: ./services/delivery-service
     ports:
-      - "8006:8000"
+      - "${DELIVERY_SERVICE_PORT}:8000"
     env_file:
       - .env
-    environment:
-      SERVER_PORT: 8000
-    volumes:
-      - ./database:/data
     depends_on:
       - users-service
       - orders-service

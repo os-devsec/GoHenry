@@ -11,8 +11,15 @@ final class Utils {
     }
 
     static int intValue(Object value, int fallback) {
+        if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
         if (value instanceof Number) return ((Number) value).intValue();
         if (value instanceof String && !((String) value).isEmpty()) return Integer.parseInt((String) value);
+        return fallback;
+    }
+
+    static double doubleValue(Object value, double fallback) {
+        if (value instanceof Number) return ((Number) value).doubleValue();
+        if (value instanceof String && !((String) value).isEmpty()) return Double.parseDouble((String) value);
         return fallback;
     }
 
@@ -34,7 +41,27 @@ final class Utils {
         return map;
     }
 
+    static Map<String, Object> objectMap(String k1, Object v1) {
+        Map<String, Object> map = new HashMap<>();
+        map.put(k1, v1);
+        return map;
+    }
+
+    static Map<String, Object> objectMap(String k1, Object v1, String k2, Object v2) {
+        Map<String, Object> map = objectMap(k1, v1);
+        map.put(k2, v2);
+        return map;
+    }
+
     static Set<String> set(String... values) {
         return new HashSet<>(Arrays.asList(values));
+    }
+
+    static String requiredEnv(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalStateException("Missing required environment variable: " + name);
+        }
+        return value;
     }
 }

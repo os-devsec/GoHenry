@@ -52,10 +52,24 @@ public class OrderController {
         return orderService.pedidoEndpoint(id, authService.currentUser(authorization));
     }
 
+    @GetMapping("/internal/pedidos/{id}/resumen")
+    public Map<String, Object> pedidoResumen(@PathVariable int id,
+                                             @RequestHeader(value = "X-Internal-Token", required = false) String internalToken) {
+        authService.requireInternalService(internalToken);
+        return orderService.pedidoResumen(id);
+    }
+
     @PostMapping("/api/v1/pedidos")
     public Map<String, Object> crearPedido(@RequestBody Map<String, Object> body,
                                            @RequestHeader(value = "Authorization", required = false) String authorization) {
         return orderService.crearPedido(body, authService.currentUser(authorization));
+    }
+
+    @PostMapping("/api/v1/pedidos/cotizar-envio")
+    public Map<String, Object> cotizarEnvio(@RequestBody Map<String, Object> body,
+                                            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        authService.currentUser(authorization);
+        return orderService.cotizarEnvio(body);
     }
 
     @PatchMapping("/api/v1/pedidos/{id}/estado")

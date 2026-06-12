@@ -9,6 +9,8 @@ type IncomingOrderCardProps = {
   acceptLabel?: string;
   showReject?: boolean;
   totalLabel?: string;
+  onReady?: (id: any) => void | Promise<void>;
+  onComplete?: (id: any) => void | Promise<void>;
 };
 
 export default function IncomingOrderCard({
@@ -17,11 +19,13 @@ export default function IncomingOrderCard({
   onReject = () => {},
   acceptLabel = 'Aceptar',
   showReject = true,
-  totalLabel = 'Total'
+  totalLabel = 'Total',
+  onReady,
+  onComplete
 }: IncomingOrderCardProps) {
   const isPending = order.status === 'pendiente';
   const isAccepted = ['aceptado', 'en_preparacion', 'listo_para_entrega'].includes(order.status);
-  const isRejected = ['rechazado', 'cancelado'].includes(order.status);
+  const isRejected = ['rechazado', 'cancelado', 'entregado'].includes(order.status);
 
   return (
     <article className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
@@ -67,9 +71,27 @@ export default function IncomingOrderCard({
       )}
 
       {(isAccepted || isRejected) && (
-        <p className={`mt-4 rounded-lg px-3 py-2 text-sm font-bold ${isAccepted ? 'bg-maize-100 text-wine-900' : 'bg-stone-100 text-stone-600'}`}>
-          {isAccepted ? 'Pedido aceptado para continuar el flujo.' : order.status === 'cancelado' ? 'Pedido cancelado por el cliente.' : 'Pedido rechazado por la tienda.'}
-        </p>
+        <>
+          <p className={`mt-4 rounded-lg px-3 py-2 text-sm font-bold ${isAccepted ? 'bg-maize-100 text-wine-900' : 'bg-stone-100 text-stone-600'}`}>
+            {isAccepted
+              ? order.status === 'listo_para_entrega'
+                ? order.type === 'pickup' ? 'Pedido listo para que el cliente lo retire.' : 'Pedido listo para entregar.'
+                : 'Pedido aceptado para continuar el flujo.'
+              : order.status === 'entregado'
+                ? 'Pedido completado.'
+                : order.status === 'cancelado' ? 'Pedido cancelado por el cliente.' : 'Pedido rechazado por la tienda.'}
+          </p>
+          {order.status === 'en_preparacion' && onReady && (
+            <button type="button" onClick={() => onReady(order.id)} className="mt-3 w-full rounded-full bg-wine-600 px-4 py-2 text-sm font-black text-white">
+              Marcar listo
+            </button>
+          )}
+          {order.type === 'pickup' && order.status === 'listo_para_entrega' && onComplete && (
+            <button type="button" onClick={() => onComplete(order.id)} className="mt-3 w-full rounded-full bg-maize-300 px-4 py-2 text-sm font-black text-wine-900">
+              Confirmar retiro
+            </button>
+          )}
+        </>
       )}
     </article>
   );
@@ -91,7 +113,8 @@ function StatusBadge({ status }) {
     en_preparacion: 'bg-emerald-100 text-emerald-800',
     listo_para_entrega: 'bg-sky-100 text-sky-800',
     rechazado: 'bg-stone-200 text-stone-600',
-    cancelado: 'bg-stone-200 text-stone-600'
+    cancelado: 'bg-stone-200 text-stone-600',
+    entregado: 'bg-emerald-100 text-emerald-800'
   };
 
   return (

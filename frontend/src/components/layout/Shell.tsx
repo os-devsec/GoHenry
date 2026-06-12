@@ -1,6 +1,7 @@
 import React from 'react';
-import { Bike, Home, LogIn, LogOut, PackageCheck, Settings, ShieldCheck, ShoppingBag, User, UserPlus, UtensilsCrossed } from 'lucide-react';
+import { Bike, Home, LogIn, LogOut, PackageCheck, Settings, ShieldCheck, ShoppingBag, User, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { appLogo } from '../../assets.ts';
 import { useApp } from '../../context/AppContext.tsx';
 import MobileTabs from './MobileTabs.tsx';
 import NavItem from './NavItem.tsx';
@@ -15,11 +16,9 @@ export default function Shell({ children }) {
       </a>
       <header className="sticky top-0 z-40 border-b border-wine-100 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/" aria-label="Ir al inicio de UIDElivery" className="flex items-center gap-2 font-black text-wine-700">
-            <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-full bg-wine-600 text-maize-300">
-              <UtensilsCrossed size={22} />
-            </span>
-            <span className="text-xl">UIDElivery</span>
+          <Link to="/" aria-label="Ir al inicio de GoHenryGo" className="flex items-center gap-2 font-black text-wine-700">
+            <img src={appLogo} alt="" className="h-11 w-11 rounded-full border border-wine-100 object-cover" />
+            <span className="text-xl">GoHenryGo</span>
           </Link>
           <nav aria-label="Navegacion principal" className="hidden items-center gap-1 md:flex">
             <NavItem to="/" icon={<Home size={18} />} label="Inicio" />

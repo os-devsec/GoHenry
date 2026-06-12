@@ -5,20 +5,18 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
 import java.util.Map;
 
 @Service
 public class AuthService {
-    private final JdbcTemplate jdbc;
+    private final RestaurantClient restaurantClient;
 
-    public AuthService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public AuthService(RestaurantClient restaurantClient) {
+        this.restaurantClient = restaurantClient;
     }
 
     @SuppressWarnings("unchecked")
@@ -46,13 +44,7 @@ public class AuthService {
     public boolean hasStoreRole(int idTienda, Map<String, Object> user) {
         int idUsuario = Utils.intValue(user.get("id_usuario"), 0);
         if (idUsuario == 0) return false;
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT 1 FROM tienda_usuario " +
-                        "WHERE id_tienda = ? AND id_usuario = ? AND cargo IN ('administrador', 'empleado') AND estado = 1",
-                idTienda,
-                idUsuario
-        );
-        return !rows.isEmpty();
+        return restaurantClient.hasStoreStaffRole(idTienda, idUsuario, Utils.set("administrador", "empleado"));
     }
 
     public boolean isPlatformAdmin(Map<String, Object> user) {

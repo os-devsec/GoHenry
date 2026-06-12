@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -45,5 +47,33 @@ func hasStoreRole(storeID int, user map[string]any, roles []string) bool {
 	if userID == 0 {
 		return false
 	}
-	return queries.HasStoreRole(storeID, userID, roles)
+	body, err := json.Marshal(gin.H{"id_usuario": userID, "roles": roles})
+	if err != nil {
+		return false
+	}
+	request, err := http.NewRequest(
+		http.MethodPost,
+		restaurantServiceURL()+"/internal/tiendas/"+strconv.Itoa(storeID)+"/personal/permisos",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return false
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Internal-Token", internalServiceToken())
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return false
+	}
+	var result struct {
+		Allowed bool `json:"allowed"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return false
+	}
+	return result.Allowed
 }

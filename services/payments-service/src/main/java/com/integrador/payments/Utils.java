@@ -11,6 +11,7 @@ final class Utils {
     }
 
     static int intValue(Object value, int fallback) {
+        if (value instanceof Boolean) return (Boolean) value ? 1 : 0;
         if (value instanceof Number) return ((Number) value).intValue();
         if (value instanceof String && !((String) value).isEmpty()) return Integer.parseInt((String) value);
         return fallback;
@@ -35,5 +36,13 @@ final class Utils {
 
     static Set<String> set(String... values) {
         return new HashSet<>(Arrays.asList(values));
+    }
+
+    static String requiredEnv(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalStateException("Missing required environment variable: " + name);
+        }
+        return value;
     }
 }

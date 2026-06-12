@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/.git
+**/.venv
+**/__pycache__
+**/*.pyc
+Avance1
+database/*.db
+services/catalog-service/uploads

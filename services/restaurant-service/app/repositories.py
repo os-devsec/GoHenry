@@ -2,21 +2,15 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from .models import Tienda, TiendaUsuario, Ubicacion, Usuario
+from .models import StoreStaff, Tienda, Ubicacion
 from .schemas import TiendaRequest
-
-
-def get_active_user_by_id(session: Session, id_usuario: int | str) -> Usuario | None:
-    return session.exec(
-        select(Usuario).where(Usuario.id_usuario == int(id_usuario), Usuario.estado == True)  # noqa: E712
-    ).first()
 
 
 def list_stores(session: Session) -> list[dict[str, Any]]:
     rows = session.exec(
         select(Tienda, Ubicacion)
         .join(Ubicacion, Ubicacion.id_ubicacion == Tienda.id_ubicacion, isouter=True)
-        .where(Tienda.estado == True)  # noqa: E712
+        .where(Tienda.estado == True)
         .order_by(Tienda.id_tienda)
     ).all()
     return [store_with_location(store, location) for store, location in rows]
@@ -105,62 +99,68 @@ def update_logo(session: Session, store: Tienda, logo_url: str) -> dict[str, Any
 def has_store_role(session: Session, id_tienda: int, id_usuario: int, roles: set[str]) -> bool:
     return (
         session.exec(
-            select(TiendaUsuario).where(
-                TiendaUsuario.id_tienda == id_tienda,
-                TiendaUsuario.id_usuario == id_usuario,
-                TiendaUsuario.cargo.in_(roles),
-                TiendaUsuario.estado == True,  # noqa: E712
+            select(StoreStaff).where(
+                StoreStaff.id_tienda == id_tienda,
+                StoreStaff.id_usuario == id_usuario,
+                StoreStaff.cargo.in_(roles),
+                StoreStaff.estado == True,  # noqa: E712
             )
         ).first()
         is not None
     )
 
 
-def list_staff(session: Session, id_tienda: int) -> list[dict[str, Any]]:
-    rows = session.exec(
-        select(TiendaUsuario, Usuario)
-        .join(Usuario, Usuario.id_usuario == TiendaUsuario.id_usuario)
-        .where(TiendaUsuario.id_tienda == id_tienda, TiendaUsuario.estado == True)  # noqa: E712
-    ).all()
-    return [staff_row(membership, user) for membership, user in rows]
-
-
-def get_staff(session: Session, id_tienda: int, id_usuario: int) -> TiendaUsuario | None:
+def list_store_staff(session: Session, id_tienda: int) -> list[StoreStaff]:
     return session.exec(
-        select(TiendaUsuario).where(TiendaUsuario.id_tienda == id_tienda, TiendaUsuario.id_usuario == id_usuario)
+        select(StoreStaff).where(StoreStaff.id_tienda == id_tienda, StoreStaff.estado == True)  # noqa: E712
+    ).all()
+
+
+def list_user_store_staff(session: Session, id_usuario: int) -> list[dict[str, Any]]:
+    rows = session.exec(
+        select(StoreStaff, Tienda)
+        .join(Tienda, Tienda.id_tienda == StoreStaff.id_tienda)
+        .where(
+            StoreStaff.id_usuario == id_usuario,
+            StoreStaff.estado == True,  # noqa: E712
+            Tienda.estado == True,  # noqa: E712
+        )
+        .order_by(Tienda.nombre)
+    ).all()
+    return [
+        {
+            **staff.model_dump(),
+            "tienda_nombre": store.nombre,
+            "sucursal": store.sucursal,
+        }
+        for staff, store in rows
+    ]
+
+
+def get_store_staff(session: Session, id_tienda: int, id_usuario: int) -> StoreStaff | None:
+    return session.exec(
+        select(StoreStaff).where(StoreStaff.id_tienda == id_tienda, StoreStaff.id_usuario == id_usuario)
     ).first()
 
 
-def upsert_staff(session: Session, id_tienda: int, id_usuario: int, cargo: str) -> dict[str, Any]:
-    staff = get_staff(session, id_tienda, id_usuario)
+def upsert_store_staff(session: Session, id_tienda: int, id_usuario: int, cargo: str) -> StoreStaff:
+    staff = get_store_staff(session, id_tienda, id_usuario)
     if staff:
         staff.cargo = cargo
         staff.estado = True
     else:
-        staff = TiendaUsuario(id_tienda=id_tienda, id_usuario=id_usuario, cargo=cargo, estado=True)
+        staff = StoreStaff(id_tienda=id_tienda, id_usuario=id_usuario, cargo=cargo, estado=True)
     session.add(staff)
     session.commit()
     session.refresh(staff)
-    return get_staff_row(session, staff.id_tienda_usuario or 0) or staff.model_dump()
+    return staff
 
 
-def get_staff_row(session: Session, id_tienda_usuario: int) -> dict[str, Any] | None:
-    row = session.exec(
-        select(TiendaUsuario, Usuario)
-        .join(Usuario, Usuario.id_usuario == TiendaUsuario.id_usuario)
-        .where(TiendaUsuario.id_tienda_usuario == id_tienda_usuario)
-    ).first()
-    if not row:
-        return None
-    membership, user = row
-    return staff_row(membership, user)
-
-
-def remove_staff(session: Session, id_tienda: int, id_tienda_usuario: int) -> None:
+def remove_store_staff(session: Session, id_tienda: int, id_tienda_usuario: int) -> None:
     staff = session.exec(
-        select(TiendaUsuario).where(
-            TiendaUsuario.id_tienda == id_tienda,
-            TiendaUsuario.id_tienda_usuario == id_tienda_usuario,
+        select(StoreStaff).where(
+            StoreStaff.id_tienda == id_tienda,
+            StoreStaff.id_tienda_usuario == id_tienda_usuario,
         )
     ).first()
     if staff:
@@ -174,14 +174,3 @@ def store_with_location(store: Tienda, location: Ubicacion | None) -> dict[str, 
     data["nombre_lugar"] = location.nombre_lugar if location else None
     data["referencia"] = location.referencia if location else None
     return data
-
-
-def staff_row(membership: TiendaUsuario, user: Usuario) -> dict[str, Any]:
-    return {
-        **membership.model_dump(),
-        "nombre": user.nombre,
-        "apellido": user.apellido,
-        "correo": user.correo,
-        "telefono": user.telefono,
-        "rol_usuario": user.rol_usuario,
-    }

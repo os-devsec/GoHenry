@@ -1,10 +1,10 @@
-# Documentacion de Servicios - UIDElivery
+# Documentacion de Servicios - GoHenryGo
 
-Fecha de validacion: 2026-06-04
+Fecha de validacion: 2026-06-10
 
 ## Resumen
 
-UIDElivery esta organizado como una aplicacion de microservicios con una base SQLite compartida en desarrollo. El acceso externo pasa por el API Gateway en `http://localhost:8000`; cada microservicio tambien expone su propio puerto para pruebas directas.
+UIDElivery esta organizado como una aplicacion de microservicios con una base SQL Server compartida en Amazon RDS. El acceso externo pasa por el API Gateway en `http://localhost:8000`; cada microservicio tambien expone su propio puerto para pruebas directas.
 
 Servicios principales:
 
@@ -26,11 +26,11 @@ Servicios principales:
 Backend completo:
 
 ```powershell
-python database/init_sqlite.py
+docker compose --profile init run --rm database-init
 docker compose up --build -d
 ```
 
-La base SQLite local se crea desde `database/init_sqlite.py`. Los microservicios ya no ejecutan DDL ni migraciones al arrancar; esto facilita migrar despues a RDS/PostgreSQL con migraciones propias.
+La base SQL Server en RDS se recrea desde `database/init_sqlserver.py` y `database/schema_sqlserver.sql`. Los microservicios no ejecutan DDL al arrancar. El perfil `init` es destructivo y requiere acceso de red al puerto 1433 del RDS.
 
 Frontend:
 
@@ -49,16 +49,16 @@ URLs:
 
 ## Base de Datos
 
-Archivo local:
+Motor y destino:
 
 ```text
-database/integrador.db
+Amazon RDS for SQL Server, configurado mediante RDS_HOST, RDS_PORT y RDS_DB
 ```
 
 Script principal:
 
 ```text
-database/schema.sql
+database/schema_sqlserver.sql
 ```
 
 ### Vistas de Seguridad y Consulta
@@ -68,28 +68,33 @@ Las vistas agregadas centralizan consultas y reducen el acceso directo a tablas 
 | Vista | Uso |
 | --- | --- |
 | `V_Ordenes_Repartidor` | Lectura de asignaciones pendientes o aceptadas y datos de entrega |
-| `V_Actualizar_Estado_Pedido` | Vista actualizable para modificar solo `id_estado_pedido` |
+| `V_Actualizar_Estado_Pedido` | Consulta del estado actual y datos principales del pedido |
 | `V_Ventas_Tiendas` | Reporte de ventas por tienda, solo pedidos `entregado` |
 | `V_Comisiones_Repartidores` | Resumen de comisiones por repartidor activo |
 | `V_Usuarios_Permisos` | Resumen de usuarios y permisos en formato `TRUE/FALSE` |
 | `V_Productos_Catalogo` | Catalogo publico, solo productos activos |
 | `V_Productos_Catalogo_Tienda` | Catalogo interno de tienda, productos activos e inactivos |
 
-### Trigger
+### Descuentos programados
 
-`TR_V_Actualizar_Estado_Pedido`
+La tabla `producto` guarda:
 
-Permite actualizar `id_estado_pedido` desde la vista `V_Actualizar_Estado_Pedido`. El trigger valida que el estado exista en `estado_pedido` y luego actualiza la tabla `pedido`.
+| Campo | Uso |
+| --- | --- |
+| `descuento_porcentaje` | Porcentaje configurado por el administrador |
+| `descuento_inicio` | Hora diaria de inicio en formato `HH:mm` |
+| `descuento_fin` | Hora diaria de fin en formato `HH:mm` |
+
+La franja es recurrente todos los dias y se evalua con la zona horaria `America/Guayaquil`. Fuera de la franja se conserva la configuracion, pero el precio se calcula sin descuento.
 
 ### Procedimientos Almacenados / USP
 
-En el estado actual del proyecto no hay procedimientos almacenados tipo `usp_*`, porque SQLite no los soporta como SQL Server. La logica equivalente esta distribuida entre:
+En el estado actual del proyecto no hay procedimientos almacenados tipo `usp_*`. La logica equivalente esta distribuida entre:
 
 - Vistas de base de datos.
-- Trigger `TR_V_Actualizar_Estado_Pedido`.
 - Funciones de servicio en Python, Go y Java.
 
-Si se migra a SQL Server, los candidatos naturales para `usp_*` serian:
+Los candidatos naturales para una futura extraccion a `usp_*` serian:
 
 | USP sugerido | Objetivo |
 | --- | --- |
@@ -265,6 +270,27 @@ Endpoints principales:
 | `POST` | `/api/v1/categorias` | Crea categoria |
 | `GET` | `/api/v1/tiendas/{id}/productos` | Lista productos internos de tienda |
 
+Los endpoints de creacion y actualizacion aceptan:
+
+```json
+{
+  "descuento_porcentaje": 20,
+  "descuento_inicio": "14:00",
+  "descuento_fin": "17:00"
+}
+```
+
+Si el porcentaje es mayor que cero, ambas horas son obligatorias y `descuento_inicio` debe ser menor que `descuento_fin`. Con porcentaje cero, el servicio limpia el horario.
+
+La respuesta de producto incluye:
+
+| Campo | Descripcion |
+| --- | --- |
+| `descuento_porcentaje` | Porcentaje configurado |
+| `descuento_activo` | Indica si la hora actual esta dentro de la franja |
+| `descuento_aplicado` | Porcentaje efectivo; cero fuera del horario |
+| `precio_final` | Precio calculado para la hora actual |
+
 Funciones principales:
 
 | Funcion | Descripcion |
@@ -276,6 +302,8 @@ Funciones principales:
 | `createProduct` | Inserta producto en tabla base |
 | `updateAvailability` | Cambia `estado` del producto |
 | `uploadProductImage` | Guarda imagen y actualiza ruta |
+| `normalizeDiscount` | Valida porcentaje y horario recurrente |
+| `discountActive` | Evalua la franja diaria en horario de Ecuador |
 
 Notas:
 
@@ -326,7 +354,7 @@ services/orders-service/src/main/java/com/integrador/orders/OrdersApplication.ja
 
 USP / responsabilidad diferencial:
 
-Crea pedidos, calcula costo de envio y cambia estados usando `V_Actualizar_Estado_Pedido`.
+Crea pedidos, calcula costo de envio, valida descuentos activos y cambia estados usando `V_Actualizar_Estado_Pedido`.
 
 Endpoints principales:
 
@@ -342,7 +370,8 @@ Funciones principales:
 
 | Funcion | Descripcion |
 | --- | --- |
-| `crearPedido` | Resuelve la ubicacion, calcula subtotal bruto, descuentos y total, y guarda el pedido |
+| `crearPedido` | Resuelve la ubicacion, vuelve a validar el horario del descuento, calcula totales y guarda el pedido |
+| `descuentoActivo` | Evalua en `America/Guayaquil` si el porcentaje se puede cobrar |
 | `actualizarEstado` | Convierte nombre de estado a id y actualiza la vista |
 | `basePedidoSql` | Consulta base de pedidos con cliente, tienda y estado |
 | `resolverUbicacionEntrega` | Usa una ubicacion existente o crea una nueva ubicacion de tipo `entrega` |
@@ -445,10 +474,12 @@ Logica relevante:
 | --- | --- |
 | `optionalProducts` | Carga catalogo publico y, si el usuario administra tiendas, mezcla productos internos activos/inactivos |
 | `refreshData` | Carga tiendas y productos |
-| `addMenuItem` | Crea producto |
+| `addMenuItem` | Crea producto con porcentaje y horario recurrente opcionales |
 | `toggleAvailability` | Pausa/reactiva producto |
 | `checkout` | Crea pedido y asignacion de repartidor |
 | `login` / `register` | Autenticacion y recarga de datos |
+
+La pagina principal contiene una seccion `Ofertas activas`. Solo muestra productos disponibles cuyo horario de descuento esta vigente. Los datos del catalogo se actualizan cada minuto para reflejar automaticamente el inicio o fin de una oferta.
 
 ## Flujo de Pedido
 
@@ -457,9 +488,9 @@ flowchart LR
     A["Cliente crea pedido"] --> B["Orders Service inserta pedido y detalle"]
     B --> C["Tienda solicita reparto y crea asignacion pendiente"]
     C --> D["Repartidor acepta y se crea la comision"]
-    D --> E["Delivery actualiza pedido a en_camino via vista"]
+    D --> E["Delivery actualiza pedido a en_camino"]
     E --> F["Repartidor entrega"]
-    F --> G["Delivery actualiza pedido a entregado via vista"]
+    F --> G["Delivery actualiza pedido a entregado"]
     G --> H["Payments registra el pago"]
     G --> I["V_Ventas_Tiendas refleja venta"]
 ```
@@ -470,7 +501,7 @@ Comandos ejecutados:
 
 ```powershell
 docker compose up --build -d
-python database/init_sqlite.py
+docker compose --profile init run --rm database-init
 go test ./...
 npm run build
 ```

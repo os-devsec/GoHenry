@@ -29,7 +29,7 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
         user = repositories.get_user_by_id(session, payload["sub"], active_only=True)
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
-        return user.model_dump()
+        return repositories.public_fields(user)
 
 
 def is_platform_admin(user: dict[str, Any]) -> bool:

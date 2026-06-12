@@ -63,7 +63,7 @@ export default function UserPage() {
             <label className="block text-sm font-bold text-stone-700">Nombre<input className="field mt-1" value={form.nombre} onChange={(event) => setForm({ ...form, nombre: event.target.value })} /></label>
             <label className="block text-sm font-bold text-stone-700">Apellido<input className="field mt-1" value={form.apellido} onChange={(event) => setForm({ ...form, apellido: event.target.value })} /></label>
             <label className="block text-sm font-bold text-stone-700">Telefono<input className="field mt-1" value={form.telefono} onChange={(event) => setForm({ ...form, telefono: event.target.value })} /></label>
-            <label className="block text-sm font-bold text-stone-700">Nueva contrasena<input className="field mt-1" type="password" minLength={6} placeholder="Dejar vacio para conservarla" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+            <label className="block text-sm font-bold text-stone-700">Nueva contrasena<input className="field mt-1" type="password" minLength={8} placeholder="Dejar vacio para conservarla" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
             <div className="flex gap-2">
               <button type="submit" disabled={saving} className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-wine-600 px-4 py-2 font-black text-white"><Save size={16} /> Guardar</button>
               <button type="button" onClick={() => setEditing(false)} className="inline-flex items-center justify-center gap-2 rounded-full bg-stone-200 px-4 py-2 font-black text-stone-700"><X size={16} /> Cancelar</button>

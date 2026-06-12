@@ -34,6 +34,7 @@ export function useApp() {
 
 export function AppProvider({ children }) {
   const [restaurants, setRestaurants] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [cart, setCart] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState(() => {
     const stored = localStorage.getItem('usuario');
@@ -66,12 +67,18 @@ export function AppProvider({ children }) {
     try {
       setApiError('');
       const stores = await api.get('/api/v1/tiendas');
-      const products = await optionalProducts(stores, userOverride);
+      const [products, categoryData] = await Promise.all([
+        optionalProducts(stores, userOverride),
+        api.get('/api/v1/categorias').catch(() => [])
+      ]);
+      setCategories(categoryData.filter((category) => category.estado));
       const mapped = stores.map((store) => {
         const menu = products
           .filter((product) => product.id_tienda === store.id_tienda)
           .map((product) => {
-            const discount = Number(product.descuento_porcentaje || 0);
+            const configuredDiscount = Number(product.descuento_porcentaje || 0);
+            const discountActive = Boolean(product.descuento_activo);
+            const discount = discountActive ? configuredDiscount : 0;
             const originalPrice = Number(product.precio || 0);
             return {
             id: product.id_producto,
@@ -79,11 +86,21 @@ export function AppProvider({ children }) {
             id_tienda: product.id_tienda,
             name: product.nombre,
             description: product.descripcion,
-            price: originalPrice * (1 - discount / 100),
+            price: Number(product.precio_final ?? originalPrice * (1 - discount / 100)),
             originalPrice,
             stock: product.stock,
             discount,
+            configuredDiscount,
+            discountActive,
+            discountStart: product.descuento_inicio || '',
+            discountEnd: product.descuento_fin || '',
             available: product.estado,
+            categories: Array.isArray(product.categorias) ? product.categorias : [],
+            categoryIds: Array.isArray(product.categorias)
+              ? product.categorias.map((category) => category.id_categoria)
+              : [],
+            isExtra: Array.isArray(product.categorias)
+              && product.categorias.some((category) => category.nombre?.toLowerCase() === 'extra'),
             image: productImageUrl(product.imagen_url) || foodImage
           };
           });
@@ -106,6 +123,14 @@ export function AppProvider({ children }) {
         };
       });
       setRestaurants(mapped);
+      const latestProducts = new Map<any, any>();
+      mapped.forEach((restaurant) => {
+        restaurant.menu.forEach((product) => latestProducts.set(product.id, product));
+      });
+      setCart((current) => current.map((item) => {
+        const latest = latestProducts.get(item.id);
+        return latest ? { ...item, ...latest, quantity: item.quantity } : item;
+      }));
     } catch (error) {
       setApiError(error.message);
       setRestaurants([]);
@@ -124,6 +149,8 @@ export function AppProvider({ children }) {
   const refreshOrder = async (orderId = lastOrder?.id_pedido) => {
     if (!orderId) return null;
     const order = await api.get(`/api/v1/pedidos/${orderId}`);
+    const payment = await api.get(`/api/v1/pedidos/${orderId}/pago`).catch(() => null);
+    if (payment && Object.keys(payment).length) order.pago = payment;
     if (['entregado', 'cancelado'].includes(order.estado_nombre)) {
       setLastOrder(null);
       localStorage.removeItem('lastOrder');
@@ -145,6 +172,8 @@ export function AppProvider({ children }) {
       localStorage.removeItem('lastOrder');
       return null;
     }
+    const payment = await api.get(`/api/v1/pedidos/${order.id_pedido}/pago`).catch(() => null);
+    if (payment && Object.keys(payment).length) order.pago = payment;
     return saveLastOrder(order);
   };
 
@@ -155,6 +184,11 @@ export function AppProvider({ children }) {
     };
     load();
   }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => refreshData(currentUser), 60_000);
+    return () => window.clearInterval(interval);
+  }, [currentUser]);
 
   const addToCart = (restaurant, item) => {
     if (!item.available) return;
@@ -169,7 +203,8 @@ export function AppProvider({ children }) {
         quantity: 1,
         restaurantName: restaurant.name,
         restaurantId: restaurant.id_tienda || Number(restaurant.id),
-        restaurantLocation: restaurant.locationText || restaurant.category
+        restaurantLocation: restaurant.nombre_lugar || restaurant.locationText || restaurant.category,
+        restaurantReference: restaurant.referencia || ''
       }];
     });
   };
@@ -191,6 +226,9 @@ export function AppProvider({ children }) {
       precio: Number(item.price),
       stock: Number(item.stock || 20),
       descuento_porcentaje: Number(item.discount || 0),
+      descuento_inicio: Number(item.discount || 0) > 0 ? item.discountStart : '',
+      descuento_fin: Number(item.discount || 0) > 0 ? item.discountEnd : '',
+      id_categorias: item.categoryIds || [],
       estado: true
     });
     if (item.imageFile) {
@@ -210,6 +248,9 @@ export function AppProvider({ children }) {
       precio: Number(item.price),
       stock: Number(item.stock),
       descuento_porcentaje: Number(item.discount || 0),
+      descuento_inicio: Number(item.discount || 0) > 0 ? item.discountStart : '',
+      descuento_fin: Number(item.discount || 0) > 0 ? item.discountEnd : '',
+      id_categorias: item.categoryIds || [],
       estado: item.available
     });
     await refreshData();
@@ -225,6 +266,12 @@ export function AppProvider({ children }) {
     }
     await refreshData();
     return store;
+  };
+
+  const createCategory = async (payload) => {
+    const category = await api.post('/api/v1/categorias', payload);
+    setCategories((current) => [...current, category].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+    return category;
   };
 
   const updateStore = async (storeId, payload) => {
@@ -329,21 +376,26 @@ export function AppProvider({ children }) {
     localStorage.removeItem('lastOrder');
   };
 
-  const checkout = async (ubicacionEntrega) => {
+  const checkout = async ({ tipo_pedido = 'delivery', id_metodo_pago, estado_pago, ...ubicacionEntrega }) => {
     if (!cart.length) return null;
     if (!currentUser) throw new Error('Inicia sesion para crear pedidos');
     const user = currentUser;
     const order = await api.post('/api/v1/pedidos', {
       id_usuario: user.id_usuario,
       id_tienda: cart[0].restaurantId || cart[0].id_tienda || 1,
-      tipo_pedido: 'delivery',
+      tipo_pedido,
       ...ubicacionEntrega,
       items: cart.map((item) => ({
         id_producto: item.id_producto || item.id,
         cantidad: item.quantity
       }))
     });
+    const payment = await api.post(`/api/v1/pedidos/${order.id_pedido}/pago`, {
+      id_metodo_pago,
+      estado_pago
+    });
     const refreshed = await api.get(`/api/v1/pedidos/${order.id_pedido}`).catch(() => order);
+    refreshed.pago = payment;
     saveLastOrder(refreshed);
     setCart([]);
     return refreshed;
@@ -365,6 +417,7 @@ export function AppProvider({ children }) {
   const value = useMemo(
     () => ({
       restaurants,
+      categories,
       cart,
       total,
       subtotal,
@@ -387,6 +440,7 @@ export function AppProvider({ children }) {
       deleteMenuItem,
       toggleAvailability,
       createStore,
+      createCategory,
       updateStore,
       addStoreStaff,
       createPlatformAdmin,
@@ -406,7 +460,7 @@ export function AppProvider({ children }) {
       refreshCurrentUser,
       setLastOrder
     }),
-    [restaurants, cart, total, subtotal, totalDiscount, cartCount, loading, apiError, currentUser, lastOrder]
+    [restaurants, categories, cart, total, subtotal, totalDiscount, cartCount, loading, apiError, currentUser, lastOrder]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

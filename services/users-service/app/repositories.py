@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from .models import Tienda, TiendaUsuario, Usuario
+from .models import Usuario
 
 
 def list_users(session: Session) -> list[dict[str, Any]]:
@@ -30,6 +30,18 @@ def list_delivery_users(session: Session) -> list[dict[str, Any]]:
     ]
 
 
+def list_users_by_ids(session: Session, ids_usuario: list[int]) -> list[dict[str, Any]]:
+    unique_ids = sorted(set(ids_usuario))
+    if not unique_ids:
+        return []
+    users = session.exec(
+        select(Usuario)
+        .where(Usuario.id_usuario.in_(unique_ids), Usuario.estado == True)  # noqa: E712
+        .order_by(Usuario.id_usuario)
+    ).all()
+    return [public_fields(user) for user in users]
+
+
 def get_user_by_id(session: Session, id_usuario: int | str, active_only: bool = False) -> Usuario | None:
     query = select(Usuario).where(Usuario.id_usuario == int(id_usuario))
     if active_only:
@@ -41,7 +53,7 @@ def get_user_by_email(session: Session, correo: str) -> Usuario | None:
     return session.exec(select(Usuario).where(Usuario.correo == correo)).first()
 
 
-def create_client(
+def create_user(
     session: Session,
     *,
     nombre: str,
@@ -49,6 +61,8 @@ def create_client(
     correo: str,
     telefono: str | None,
     password_hash: str,
+    rol_usuario: str = "cliente",
+    acepta_repartos: bool = False,
 ) -> Usuario:
     user = Usuario(
         nombre=nombre,
@@ -56,33 +70,8 @@ def create_client(
         correo=correo,
         telefono=telefono,
         password_hash=password_hash,
-        rol_usuario="cliente",
-        acepta_repartos=False,
-        estado=True,
-    )
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    return user
-
-
-def create_platform_admin(
-    session: Session,
-    *,
-    nombre: str,
-    apellido: str,
-    correo: str,
-    telefono: str | None,
-    password_hash: str,
-) -> Usuario:
-    user = Usuario(
-        nombre=nombre,
-        apellido=apellido,
-        correo=correo,
-        telefono=telefono,
-        password_hash=password_hash,
-        rol_usuario="admin_plataforma",
-        acepta_repartos=False,
+        rol_usuario=rol_usuario,
+        acepta_repartos=acepta_repartos,
         estado=True,
     )
     session.add(user)
@@ -128,27 +117,6 @@ def update_account(
     return user
 
 
-def list_store_memberships(session: Session, id_usuario: int) -> list[dict[str, Any]]:
-    rows = session.exec(
-        select(TiendaUsuario, Tienda)
-        .join(Tienda, Tienda.id_tienda == TiendaUsuario.id_tienda)
-        .where(
-            TiendaUsuario.id_usuario == id_usuario,
-            TiendaUsuario.estado == True,  # noqa: E712
-            Tienda.estado == True,  # noqa: E712
-        )
-        .order_by(Tienda.nombre)
-    ).all()
-    return [
-        {
-            **membership.model_dump(),
-            "tienda_nombre": store.nombre,
-            "sucursal": store.sucursal,
-        }
-        for membership, store in rows
-    ]
-
-
 def public_fields(user: Usuario) -> dict[str, Any]:
     return {
         "id_usuario": user.id_usuario,
@@ -162,9 +130,7 @@ def public_fields(user: Usuario) -> dict[str, Any]:
     }
 
 
-def public_user(session: Session, user: Usuario) -> dict[str, Any]:
-    data = user.model_dump()
-    data.pop("password_hash", None)
-    data.setdefault("rol_usuario", "cliente")
-    data["tiendas"] = list_store_memberships(session, user.id_usuario or 0)
+def public_user(user: Usuario, stores: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    data = public_fields(user)
+    data["tiendas"] = stores or []
     return data

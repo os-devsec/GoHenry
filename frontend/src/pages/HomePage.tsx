@@ -1,14 +1,41 @@
-import React from 'react';
-import { Search } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { BadgePercent, Search } from 'lucide-react';
 import { foodImage } from '../assets.ts';
 import ProductCard from '../components/restaurant/ProductCard.tsx';
 import RestaurantCard from '../components/restaurant/RestaurantCard.tsx';
 import { useApp } from '../context/AppContext.tsx';
 
 export default function HomePage() {
-  const { restaurants, addToCart, apiError } = useApp();
-  const featuredProducts = restaurants.flatMap((restaurant) =>
-    restaurant.menu.map((product) => ({ restaurant, product }))
+  const { restaurants, categories, addToCart, apiError } = useApp();
+  const [search, setSearch] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const selectedCategory = categories.find((category) => String(category.id_categoria) === categoryId);
+  const featuredProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return restaurants.flatMap((restaurant) =>
+      restaurant.menu
+        .filter((product) => {
+          const matchesSearch = !query
+            || restaurant.name.toLowerCase().includes(query)
+            || product.name.toLowerCase().includes(query)
+            || product.description?.toLowerCase().includes(query);
+          const matchesCategory = !categoryId || product.categoryIds.includes(Number(categoryId));
+          const showExtra = selectedCategory?.nombre?.toLowerCase() === 'extra';
+          return matchesSearch && matchesCategory && (showExtra || !product.isExtra);
+        })
+        .map((product) => ({ restaurant, product }))
+    );
+  }, [restaurants, search, categoryId, selectedCategory?.nombre]);
+  const visibleRestaurants = restaurants.filter((restaurant) => {
+    const query = search.trim().toLowerCase();
+    return !query
+      || restaurant.name.toLowerCase().includes(query)
+      || restaurant.menu.some((product) => product.name.toLowerCase().includes(query));
+  });
+  const activeOffers = restaurants.flatMap((restaurant) =>
+    restaurant.menu
+      .filter((product) => product.discountActive && !product.isExtra && product.available)
+      .map((product) => ({ restaurant, product }))
   );
 
   return (
@@ -24,10 +51,40 @@ export default function HomePage() {
           <label className="flex items-center gap-2 rounded-lg bg-white p-2 text-stone-700 shadow-sm">
             <span className="sr-only">Buscar restaurante o plato</span>
             <Search aria-hidden="true" className="ml-2 text-wine-600" size={20} />
-            <input className="w-full bg-transparent px-1 py-2 text-sm outline-none" placeholder="Buscar restaurante o plato" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent px-1 py-2 text-sm outline-none" placeholder="Buscar restaurante o producto" />
+          </label>
+          <label className="block max-w-sm space-y-2">
+            <span className="text-sm font-bold text-wine-50">Filtrar productos por categoria</span>
+            <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="field text-stone-900">
+              <option value="">Todas las categorias</option>
+              {categories.map((category) => (
+                <option key={category.id_categoria} value={category.id_categoria}>{category.nombre}</option>
+              ))}
+            </select>
           </label>
         </div>
       </section>
+
+      {activeOffers.length > 0 && (
+        <section aria-labelledby="active-offers-title" className="space-y-3 rounded-lg bg-maize-100 p-5 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-wine-700 text-white">
+              <BadgePercent size={21} />
+            </span>
+            <div>
+              <h2 id="active-offers-title" className="text-2xl font-black text-wine-900">Ofertas activas</h2>
+              <p className="text-sm text-stone-600">Descuentos disponibles ahora en varios restaurantes.</p>
+            </div>
+          </div>
+          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {activeOffers.map(({ restaurant, product }) => (
+              <li key={`offer-${restaurant.id}-${product.id}`}>
+                <ProductCard restaurant={restaurant} product={product} onAdd={addToCart} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="restaurants-title" className="space-y-3">
         <div>
@@ -35,7 +92,7 @@ export default function HomePage() {
           <p className="text-sm text-stone-500">Tiendas disponibles dentro de la institucion.</p>
         </div>
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {restaurants.map((restaurant) => (
+          {visibleRestaurants.map((restaurant) => (
             <li key={restaurant.id}>
               <RestaurantCard restaurant={restaurant} />
             </li>

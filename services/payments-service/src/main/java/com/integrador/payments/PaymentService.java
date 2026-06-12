@@ -11,10 +11,12 @@ import java.util.Map;
 public class PaymentService {
     private final PaymentRepository payments;
     private final AuthService authService;
+    private final OrderClient orderClient;
 
-    public PaymentService(PaymentRepository payments, AuthService authService) {
+    public PaymentService(PaymentRepository payments, AuthService authService, OrderClient orderClient) {
         this.payments = payments;
         this.authService = authService;
+        this.orderClient = orderClient;
     }
 
     public List<Map<String, Object>> metodos() {
@@ -45,7 +47,8 @@ public class PaymentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Metodo de pago invalido");
         }
         if (monto == 0) {
-            monto = payments.totalPedido(idPedido);
+            Map<String, Object> order = orderClient.orderSummary(idPedido);
+            monto = Utils.doubleValue(order.get("total_con_envio"), Utils.doubleValue(order.get("total"), 0));
         }
         payments.guardarPago(idPedido, metodo, monto, estado);
         return payments.pagoPorPedido(idPedido);
@@ -58,8 +61,9 @@ public class PaymentService {
 
     private void requireOrderOwnerOrAdmin(int idPedido, Map<String, Object> user) {
         if (authService.isPlatformAdmin(user)) return;
-        Integer idUsuario = payments.usuarioDelPedido(idPedido);
-        if (idUsuario == null || idUsuario != Utils.intValue(user.get("id_usuario"), 0)) {
+        Map<String, Object> order = orderClient.orderSummary(idPedido);
+        int idUsuario = Utils.intValue(order.get("id_usuario"), 0);
+        if (idUsuario == 0 || idUsuario != Utils.intValue(user.get("id_usuario"), 0)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "No tienes permisos para este pago");
         }
     }

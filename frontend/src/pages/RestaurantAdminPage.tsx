@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarClock, Pencil, Percent, Save, Store, Trash2, UserPlus, Users, UtensilsCrossed, X } from 'lucide-react';
+import { CalendarClock, ChevronDown, ChevronUp, History, Pencil, Percent, Save, Store, Tags, Trash2, UserPlus, Users, UtensilsCrossed, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api.ts';
 import { foodImage } from '../assets.ts';
@@ -12,9 +12,11 @@ import { formatCurrency } from '../utils/format.ts';
 export default function RestaurantAdminPage() {
   const {
     managedRestaurants,
+    categories,
     storeMemberships,
     isPlatformAdmin,
     addMenuItem,
+    createCategory,
     addStoreStaff,
     deleteMenuItem,
     removeStoreStaff,
@@ -24,17 +26,22 @@ export default function RestaurantAdminPage() {
   } = useApp();
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const restaurant = managedRestaurants.find((entry) => String(entry.id_tienda) === selectedStoreId) || managedRestaurants[0];
-  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '20', discount: '0', imageFile: null });
+  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '20', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], imageFile: null });
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [staffForm, setStaffForm] = useState({ nombre: '', apellido: '', correo: '', telefono: '', password: '', cargo: 'empleado' });
   const [staff, setStaff] = useState([]);
   const [incomingOrders, setIncomingOrders] = useState([]);
+  const [showOrderHistory, setShowOrderHistory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', description: '', price: '', stock: '', discount: '0', available: true });
+  const [editForm, setEditForm] = useState({ name: '', description: '', price: '', stock: '', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], available: true });
   const [storeForm, setStoreForm] = useState(null);
   const currentMembership = storeMemberships.find((membership) => membership.id_tienda === restaurant?.id_tienda);
   const canManageProducts = isPlatformAdmin || currentMembership?.cargo === 'administrador';
   const canManageStaff = canManageProducts;
+  const terminalOrderStatuses = ['entregado', 'cancelado', 'rechazado'];
+  const activeOrders = incomingOrders.filter((order) => !terminalOrderStatuses.includes(order.status));
+  const orderHistory = incomingOrders.filter((order) => terminalOrderStatuses.includes(order.status));
 
   useEffect(() => {
     if (!restaurant) return;
@@ -57,7 +64,10 @@ export default function RestaurantAdminPage() {
       code: `Pedido #${order.id_pedido}`,
       title: 'Nuevo pedido para preparar',
       customer: `Cliente: ${order.cliente_nombre}`,
-      location: `Entrega: ${order.nombre_lugar_entrega}${order.referencia_entrega ? ` - ${order.referencia_entrega}` : ''}`,
+      type: order.tipo_pedido,
+      location: order.tipo_pedido === 'pickup'
+        ? `Retiro en tienda: ${restaurant.name}`
+        : `Entrega: ${order.nombre_lugar_entrega}${order.referencia_entrega ? ` - ${order.referencia_entrega}` : ''}`,
       time: order.fecha_pedido,
       status: order.estado_nombre,
       total: order.total_tienda ?? order.subtotal,
@@ -91,9 +101,16 @@ export default function RestaurantAdminPage() {
   }
 
   const updateOrderStatus = async (orderId, status) => {
-    const estado = status === 'aceptado' ? 'en_preparacion' : 'rechazado';
+    const order = incomingOrders.find((entry) => entry.id === orderId);
+    const estado = status === 'aceptado'
+      ? 'en_preparacion'
+      : status === 'listo'
+        ? 'listo_para_entrega'
+        : status === 'entregado'
+          ? 'entregado'
+          : 'rechazado';
     await api.patch(`/api/v1/pedidos/${orderId}/estado`, { estado });
-    if (status === 'aceptado') {
+    if (status === 'aceptado' && order?.type === 'delivery') {
       await api.post('/api/v1/asignaciones-repartidor', { id_pedido: orderId }).catch(() => null);
     }
     await loadOrders();
@@ -114,7 +131,10 @@ export default function RestaurantAdminPage() {
       description: item.description,
       price: String(item.originalPrice),
       stock: String(item.stock),
-      discount: String(item.discount || 0),
+      discount: String(item.configuredDiscount || 0),
+      discountStart: item.discountStart || '',
+      discountEnd: item.discountEnd || '',
+      categoryIds: item.categoryIds || [],
       available: item.available
     });
   };
@@ -135,10 +155,25 @@ export default function RestaurantAdminPage() {
       price: Number(form.price),
       stock: Number(form.stock),
       discount: Number(form.discount),
+      discountStart: form.discountStart,
+      discountEnd: form.discountEnd,
+      categoryIds: form.categoryIds,
       imageFile: form.imageFile
     });
-    setForm({ name: '', description: '', price: '', stock: '20', discount: '0', imageFile: null });
+    setForm({ name: '', description: '', price: '', stock: '20', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], imageFile: null });
     setSaving(false);
+  };
+
+  const addCategory = async () => {
+    const nombre = newCategoryName.trim();
+    if (!nombre) return;
+    const existing = categories.find((category) => category.nombre.toLowerCase() === nombre.toLowerCase());
+    const category = existing || await createCategory({ nombre, descripcion: '' });
+    setForm((current) => ({
+      ...current,
+      categoryIds: Array.from(new Set([...current.categoryIds, category.id_categoria]))
+    }));
+    setNewCategoryName('');
   };
 
   const submitStaff = async (event) => {
@@ -214,7 +249,7 @@ export default function RestaurantAdminPage() {
           <p className="text-sm text-stone-500">Ejemplo de la entidad Pedido con DetallePedido, Cliente, Producto y Pago.</p>
         </div>
         <ul className="grid gap-3 lg:grid-cols-2">
-          {incomingOrders.map((order) => (
+          {activeOrders.map((order) => (
             <li key={order.id}>
               <IncomingOrderCard
                 order={order}
@@ -222,16 +257,48 @@ export default function RestaurantAdminPage() {
                 totalLabel="Total de platos"
                 onAccept={(orderId) => updateOrderStatus(orderId, 'aceptado')}
                 onReject={(orderId) => updateOrderStatus(orderId, 'rechazado')}
+                onReady={(orderId) => updateOrderStatus(orderId, 'listo')}
+                onComplete={(orderId) => updateOrderStatus(orderId, 'entregado')}
               />
             </li>
           ))}
-          {!incomingOrders.length && (
+          {!activeOrders.length && (
             <li className="rounded-lg border border-dashed border-wine-200 bg-white p-6 text-sm text-stone-600 lg:col-span-2">
-              <p className="font-black text-wine-900">Aun no hay pedidos para esta tienda</p>
-              <p className="mt-1">Cuando los clientes creen pedidos reales apareceran aqui.</p>
+              <p className="font-black text-wine-900">No hay pedidos activos</p>
+              <p className="mt-1">Los pedidos nuevos y en preparacion apareceran aqui.</p>
             </li>
           )}
         </ul>
+        <button
+          type="button"
+          onClick={() => setShowOrderHistory((current) => !current)}
+          className="inline-flex items-center gap-2 rounded-full bg-stone-100 px-4 py-2 text-sm font-black text-wine-800"
+          aria-expanded={showOrderHistory}
+        >
+          <History size={17} />
+          Historial de pedidos ({orderHistory.length})
+          {showOrderHistory ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+        </button>
+        {showOrderHistory && (
+          <div className="space-y-3 rounded-lg border border-stone-200 bg-stone-50 p-4">
+            <h3 className="text-lg font-black text-wine-900">Pedidos completados y cancelados</h3>
+            <ul className="grid gap-3 lg:grid-cols-2">
+              {orderHistory.map((order) => (
+                <li key={order.id}>
+                  <IncomingOrderCard
+                    order={order}
+                    totalLabel="Total de platos"
+                    onAccept={() => {}}
+                    showReject={false}
+                  />
+                </li>
+              ))}
+              {!orderHistory.length && (
+                <li className="text-sm text-stone-500 lg:col-span-2">Todavia no hay pedidos en el historial.</li>
+              )}
+            </ul>
+          </div>
+        )}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
@@ -258,6 +325,30 @@ export default function RestaurantAdminPage() {
               </div>
               <span className="block text-xs text-stone-500">Ejemplo: 15 equivale a 15% de descuento.</span>
             </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Inicio del descuento">
+                <input className="field" type="time" required={Number(form.discount) > 0} value={form.discountStart} onChange={(event) => setForm({ ...form, discountStart: event.target.value })} />
+              </Field>
+              <Field label="Fin del descuento">
+                <input className="field" type="time" required={Number(form.discount) > 0} value={form.discountEnd} onChange={(event) => setForm({ ...form, discountEnd: event.target.value })} />
+              </Field>
+            </div>
+            <p className="text-xs text-stone-500">El horario se repite todos los dias en la zona horaria de Ecuador.</p>
+            <Field label="Categorias">
+              <CategorySelector
+                categories={categories}
+                selected={form.categoryIds}
+                onChange={(categoryIds) => setForm({ ...form, categoryIds })}
+              />
+            </Field>
+            <Field label="Crear categoria">
+              <div className="flex gap-2">
+                <input className="field" value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="Ej. Bebidas o Extra" />
+                <button type="button" onClick={addCategory} className="inline-flex items-center gap-2 rounded-lg bg-stone-100 px-4 py-2 text-sm font-black text-wine-800">
+                  <Tags size={16} /> Crear
+                </button>
+              </div>
+            </Field>
             <Field label="Imagen del plato">
               <input className="field" type="file" accept="image/*" onChange={(event) => setForm({ ...form, imageFile: event.target.files?.[0] || null })} />
             </Field>
@@ -281,6 +372,15 @@ export default function RestaurantAdminPage() {
                     <Field label="Descripcion" wide><textarea className="field" value={editForm.description} onChange={(event) => setEditForm({ ...editForm, description: event.target.value })} /></Field>
                     <Field label="Stock"><input className="field" type="number" min="0" value={editForm.stock} onChange={(event) => setEditForm({ ...editForm, stock: event.target.value })} /></Field>
                     <Field label="Descuento (%)"><input className="field" type="number" min="0" max="100" value={editForm.discount} onChange={(event) => setEditForm({ ...editForm, discount: event.target.value })} /></Field>
+                    <Field label="Inicio descuento"><input className="field" type="time" required={Number(editForm.discount) > 0} value={editForm.discountStart} onChange={(event) => setEditForm({ ...editForm, discountStart: event.target.value })} /></Field>
+                    <Field label="Fin descuento"><input className="field" type="time" required={Number(editForm.discount) > 0} value={editForm.discountEnd} onChange={(event) => setEditForm({ ...editForm, discountEnd: event.target.value })} /></Field>
+                    <Field label="Categorias" wide>
+                      <CategorySelector
+                        categories={categories}
+                        selected={editForm.categoryIds}
+                        onChange={(categoryIds) => setEditForm({ ...editForm, categoryIds })}
+                      />
+                    </Field>
                   </div>
                   <div className="mt-4 flex gap-2">
                     <button type="submit" className="inline-flex items-center gap-2 rounded-full bg-wine-600 px-4 py-2 text-sm font-black text-white"><Save size={16} /> Guardar plato</button>
@@ -293,9 +393,16 @@ export default function RestaurantAdminPage() {
                 <div className="min-w-0 flex-1">
                   <h3 className="font-black">{item.name}</h3>
                   <p className="line-clamp-1 text-sm text-stone-500">{item.description}</p>
+                  <p className="mt-1 text-xs font-bold text-stone-500">
+                    {item.categories?.map((category) => category.nombre).join(', ') || 'Sin categoria'}
+                  </p>
                   <p className="mt-1 font-bold text-wine-700">
                     {formatCurrency(item.price)}
-                    {item.discount > 0 && <span className="ml-2 rounded-full bg-maize-100 px-2 py-1 text-xs text-wine-800">{item.discount}% menos</span>}
+                    {item.configuredDiscount > 0 && (
+                      <span className={`ml-2 rounded-full px-2 py-1 text-xs ${item.discountActive ? 'bg-maize-100 text-wine-800' : 'bg-stone-100 text-stone-600'}`}>
+                        {item.configuredDiscount}% de {item.discountStart} a {item.discountEnd}
+                      </span>
+                    )}
                   </p>
                 </div>
                 {canManageProducts && <div className="flex gap-2">
@@ -373,6 +480,33 @@ function Field({ label, children, wide = false }) {
       <span className="text-sm font-bold text-stone-700">{label}</span>
       {children}
     </label>
+  );
+}
+
+function CategorySelector({ categories, selected, onChange }) {
+  const toggle = (categoryId) => {
+    onChange(
+      selected.includes(categoryId)
+        ? selected.filter((id) => id !== categoryId)
+        : [...selected, categoryId]
+    );
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2 rounded-lg border border-stone-200 p-3">
+      {categories.map((category) => (
+        <label key={category.id_categoria} className={`inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 text-sm font-bold ${selected.includes(category.id_categoria) ? 'bg-wine-600 text-white' : 'bg-stone-100 text-stone-600'}`}>
+          <input
+            type="checkbox"
+            className="sr-only"
+            checked={selected.includes(category.id_categoria)}
+            onChange={() => toggle(category.id_categoria)}
+          />
+          {category.nombre}
+        </label>
+      ))}
+      {!categories.length && <span className="text-sm text-stone-500">Crea la primera categoria para clasificar el producto.</span>}
+    </div>
   );
 }
 

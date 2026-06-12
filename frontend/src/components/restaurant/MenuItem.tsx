@@ -12,6 +12,11 @@ export default function MenuItem({ item, onAdd, detailTo }) {
           <div>
             <h3 className="font-black">{item.name}</h3>
             <p className="mt-1 line-clamp-2 text-sm text-stone-500">{item.description}</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {item.categories?.map((category) => (
+                <span key={category.id_categoria} className="rounded-full bg-stone-100 px-2 py-1 text-xs font-bold text-stone-600">{category.nombre}</span>
+              ))}
+            </div>
           </div>
           <div className="text-right">
             {item.discount > 0 && <span className="block text-xs text-stone-400 line-through">{formatCurrency(item.originalPrice)}</span>}
