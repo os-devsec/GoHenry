@@ -10,11 +10,8 @@ import (
 )
 
 func databaseURL() string {
-	if directURL := os.Getenv("SQLSERVER_DSN"); directURL != "" {
-		return directURL
-	}
 	host := requiredEnv("RDS_HOST")
-	port := fallback(os.Getenv("RDS_PORT"), "1433")
+	port := requiredEnv("RDS_PORT")
 	databaseName := requiredEnv("RDS_DB")
 	connectionURL := &url.URL{
 		Scheme: "sqlserver",
@@ -33,13 +30,6 @@ func requiredEnv(name string) string {
 	value := os.Getenv(name)
 	if value == "" {
 		panic(fmt.Sprintf("missing required environment variable: %s", name))
-	}
-	return value
-}
-
-func fallback(value string, alternative string) string {
-	if strings.TrimSpace(value) == "" {
-		return alternative
 	}
 	return value
 }

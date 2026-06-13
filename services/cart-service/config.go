@@ -10,13 +10,10 @@ import (
 )
 
 func databaseURL() string {
-	if directURL := os.Getenv("SQLSERVER_DSN"); directURL != "" {
-		return directURL
-	}
 	connectionURL := &url.URL{
 		Scheme: "sqlserver",
 		User:   url.UserPassword(requiredEnv("RDS_USER"), requiredEnv("RDS_PASSWORD")),
-		Host:   net.JoinHostPort(requiredEnv("RDS_HOST"), fallback(os.Getenv("RDS_PORT"), "1433")),
+		Host:   net.JoinHostPort(requiredEnv("RDS_HOST"), requiredEnv("RDS_PORT")),
 	}
 	query := connectionURL.Query()
 	query.Set("database", requiredEnv("RDS_DB"))

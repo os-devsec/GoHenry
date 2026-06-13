@@ -2,11 +2,11 @@ from collections.abc import Generator
 
 from sqlmodel import Session, create_engine
 
-from .config import DATABASE_URL
+from .config import RDS_DATABASE_URL
 
 
 engine = create_engine(
-    DATABASE_URL,
+    RDS_DATABASE_URL,
     pool_pre_ping=True,
 )
 

@@ -27,6 +27,10 @@ La configuracion se toma de `.env`; usa `.env.example` como referencia. El perfi
 `init` es destructivo y crea tambien el administrador inicial configurado en
 `INITIAL_ADMIN_EMAIL` y `INITIAL_ADMIN_PASSWORD`.
 
+Todos los microservicios usan exclusivamente SQL Server en RDS mediante
+`RDS_HOST`, `RDS_PORT`, `RDS_DB`, `RDS_USER` y `RDS_PASSWORD`. No se admite
+SQLite ni una URL de base de datos alternativa.
+
 El Security Group de RDS debe permitir trafico TCP al puerto `1433` desde el
 equipo o la infraestructura donde se ejecuten los contenedores.
 

@@ -77,7 +77,7 @@ def main() -> None:
     load_env_file()
     connection = pymssql.connect(
         server=required_env("RDS_HOST"),
-        port=int(os.getenv("RDS_PORT", "1433")),
+        port=int(required_env("RDS_PORT")),
         user=required_env("RDS_USER"),
         password=required_env("RDS_PASSWORD"),
         database=required_env("RDS_DB"),
