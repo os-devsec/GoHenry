@@ -45,6 +45,7 @@ services:
       - .env
     volumes:
       - ./services/restaurant-service/uploads:/app/uploads
+      - ./services/catalog-service/uploads:/app/catalog-uploads
 
   catalog-service:
     build: ./services/catalog-service

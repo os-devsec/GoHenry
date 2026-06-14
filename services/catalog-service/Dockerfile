@@ -8,6 +8,11 @@ RUN go build -o /bin/catalog-service .
 
 FROM alpine:3.20
 
+RUN apk add --no-cache ca-certificates \
+    && wget -q -O /etc/ssl/certs/aws-rds-global-bundle.pem \
+        https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+    && cat /etc/ssl/certs/aws-rds-global-bundle.pem >> /etc/ssl/certs/ca-certificates.crt
+
 WORKDIR /app
 COPY --from=builder /bin/catalog-service /app/catalog-service
 RUN mkdir -p /app/uploads/products

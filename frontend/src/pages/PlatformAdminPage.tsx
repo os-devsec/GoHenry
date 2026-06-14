@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, ShieldCheck, Store } from 'lucide-react';
+import { Plus, ShieldCheck, Store, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext.tsx';
 
 export default function PlatformAdminPage() {
-  const { createPlatformAdmin, createStore, restaurants } = useApp();
+  const { createPlatformAdmin, createStore, deleteStore, restaurants } = useApp();
   const [storeForm, setStoreForm] = useState({
     nombre: '',
     sucursal: 'Campus UIDE',
@@ -17,14 +17,16 @@ export default function PlatformAdminPage() {
   const [adminForm, setAdminForm] = useState({ nombre: '', apellido: '', correo: '', telefono: '', password: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [deletingStoreId, setDeletingStoreId] = useState<number | null>(null);
 
   const submitStore = async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
     try {
       setError('');
       await createStore(storeForm);
       setStoreForm({ nombre: '', sucursal: 'Campus UIDE', nombre_lugar: 'Campus UIDE', referencia: '', horario_apertura: '08:00', horario_cierre: '18:00', logoFile: null });
-      event.currentTarget.reset();
+      form.reset();
       setMessage('Tienda creada correctamente.');
     } catch (apiError) {
       setError(apiError.message);
@@ -40,6 +42,25 @@ export default function PlatformAdminPage() {
       setMessage('Admin de plataforma guardado correctamente.');
     } catch (apiError) {
       setError(apiError.message);
+    }
+  };
+
+  const removeStore = async (restaurant) => {
+    const confirmed = window.confirm(
+      `¿Eliminar "${restaurant.name}" permanentemente?\n\nTambién se eliminarán sus productos, personal, carritos, pedidos, pagos, comisiones y asignaciones. Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setError('');
+      setMessage('');
+      setDeletingStoreId(restaurant.id_tienda);
+      await deleteStore(restaurant.id_tienda);
+      setMessage(`Tienda "${restaurant.name}" eliminada correctamente.`);
+    } catch (apiError) {
+      setError(apiError.message);
+    } finally {
+      setDeletingStoreId(null);
     }
   };
 
@@ -123,7 +144,18 @@ export default function PlatformAdminPage() {
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate font-black text-stone-900">{restaurant.name}</h3>
                   <p className="text-sm text-stone-500">{restaurant.category}</p>
-                  <Link to="/restaurant-admin" className="mt-3 inline-flex rounded-full bg-maize-300 px-4 py-2 text-sm font-black text-wine-900">Administrar</Link>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link to="/restaurant-admin" className="inline-flex rounded-full bg-maize-300 px-4 py-2 text-sm font-black text-wine-900">Administrar</Link>
+                    <button
+                      type="button"
+                      onClick={() => removeStore(restaurant)}
+                      disabled={deletingStoreId === restaurant.id_tienda}
+                      className="inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-black text-white disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <Trash2 size={16} />
+                      {deletingStoreId === restaurant.id_tienda ? 'Eliminando...' : 'Eliminar'}
+                    </button>
+                  </div>
                 </div>
               </article>
             </li>

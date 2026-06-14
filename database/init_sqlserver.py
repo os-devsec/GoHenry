@@ -30,6 +30,41 @@ def required_env(name: str) -> str:
     return value
 
 
+def quote_identifier(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise RuntimeError(f"Nombre de base de datos invalido: {value!r}")
+    return f"[{value}]"
+
+
+def ensure_database_exists(
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    database: str,
+) -> None:
+    connection = pymssql.connect(
+        server=host,
+        port=port,
+        user=user,
+        password=password,
+        database="master",
+        login_timeout=15,
+        timeout=60,
+        charset="UTF-8",
+        encryption="require",
+        autocommit=True,
+    )
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1 FROM sys.databases WHERE name = %s", (database,))
+        if cursor.fetchone() is None:
+            print(f"Creating SQL Server database {database!r}...")
+            cursor.execute(f"CREATE DATABASE {quote_identifier(database)}")
+    finally:
+        connection.close()
+
+
 def hash_password(password: str) -> str:
     digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
@@ -75,12 +110,20 @@ def main() -> None:
         parser.error("Debes indicar --reset para ejecutar una operacion destructiva.")
 
     load_env_file()
+    host = required_env("RDS_HOST")
+    port = int(required_env("RDS_PORT"))
+    user = required_env("RDS_USER")
+    password = required_env("RDS_PASSWORD")
+    database = required_env("RDS_DB")
+
+    ensure_database_exists(host, port, user, password, database)
+
     connection = pymssql.connect(
-        server=required_env("RDS_HOST"),
-        port=int(required_env("RDS_PORT")),
-        user=required_env("RDS_USER"),
-        password=required_env("RDS_PASSWORD"),
-        database=required_env("RDS_DB"),
+        server=host,
+        port=port,
+        user=user,
+        password=password,
+        database=database,
         login_timeout=15,
         timeout=60,
         charset="UTF-8",
