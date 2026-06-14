@@ -1,13 +1,17 @@
+import logging
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, UploadFile
 from sqlmodel import Session
 
-from .config import STORE_LOGO_DIR
+from .config import PRODUCT_IMAGE_DIR, STORE_LOGO_DIR
 from . import repositories, user_client
 from .schemas import PersonalRequest, TiendaRequest
 from .security import require_platform_admin, require_store_role
+
+
+logger = logging.getLogger(__name__)
 
 
 def list_stores(session: Session) -> list[dict[str, Any]]:
@@ -32,6 +36,23 @@ def update_store(
     return repositories.update_store(session, store, payload)
 
 
+def delete_store(
+    session: Session,
+    id_tienda: int,
+    user: dict[str, Any],
+) -> dict[str, bool]:
+    require_platform_admin(user)
+    deleted = repositories.delete_store(session, id_tienda)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+
+    delete_matching_files(STORE_LOGO_DIR, f"tienda-{id_tienda}-*")
+    for product in deleted["products"]:
+        delete_matching_files(PRODUCT_IMAGE_DIR, f"producto-{product['id_producto']}-*")
+
+    return {"ok": True}
+
+
 async def upload_store_logo(
     session: Session,
     id_tienda: int,
@@ -50,6 +71,17 @@ async def upload_store_logo(
     content = await logo.read()
     destination.write_bytes(content)
     return repositories.update_logo(session, store, f"uploads/stores/{Path(file_name).name}")
+
+
+def delete_matching_files(directory: Path, pattern: str) -> None:
+    if not directory.exists():
+        return
+    for path in directory.glob(pattern):
+        if path.is_file():
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("No se pudo eliminar el archivo asociado %s", path, exc_info=True)
 
 
 def list_store_staff(session: Session, id_tienda: int, user: dict[str, Any]) -> list[dict[str, Any]]:

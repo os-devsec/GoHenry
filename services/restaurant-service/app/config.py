@@ -25,6 +25,7 @@ def rds_database_url() -> URL:
 
 RDS_DATABASE_URL = rds_database_url()
 STORE_LOGO_DIR = Path(os.getenv("STORE_LOGO_DIR", "uploads/stores")).resolve()
+PRODUCT_IMAGE_DIR = Path(os.getenv("PRODUCT_IMAGE_DIR", "/app/catalog-uploads/products")).resolve()
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000").rstrip("/")
 USERS_SERVICE_URL = os.getenv("USERS_SERVICE_URL", "http://users-service:8000").rstrip("/")
 INTERNAL_SERVICE_TOKEN = required_env("INTERNAL_SERVICE_TOKEN")

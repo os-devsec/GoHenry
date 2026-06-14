@@ -268,6 +268,12 @@ export function AppProvider({ children }) {
     return store;
   };
 
+  const deleteStore = async (storeId) => {
+    await api.delete(`/api/v1/tiendas/${storeId}`);
+    await refreshData();
+    await refreshCurrentUser();
+  };
+
   const createCategory = async (payload) => {
     const category = await api.post('/api/v1/categorias', payload);
     setCategories((current) => [...current, category].sort((a, b) => a.nombre.localeCompare(b.nombre)));
@@ -440,6 +446,7 @@ export function AppProvider({ children }) {
       deleteMenuItem,
       toggleAvailability,
       createStore,
+      deleteStore,
       createCategory,
       updateStore,
       addStoreStaff,

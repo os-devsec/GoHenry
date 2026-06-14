@@ -1,5 +1,6 @@
 from typing import Any
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from .models import StoreStaff, Tienda, Ubicacion
@@ -94,6 +95,137 @@ def update_logo(session: Session, store: Tienda, logo_url: str) -> dict[str, Any
     session.commit()
     session.refresh(store)
     return store.model_dump()
+
+
+def delete_store(session: Session, id_tienda: int) -> dict[str, Any] | None:
+    connection = session.connection()
+    store = connection.execute(
+        text(
+            """
+            SELECT id_tienda, id_ubicacion, logo_url
+            FROM tienda
+            WHERE id_tienda = :id_tienda
+            """
+        ),
+        {"id_tienda": id_tienda},
+    ).mappings().first()
+    if not store:
+        return None
+
+    product_rows = connection.execute(
+        text(
+            """
+            SELECT id_producto, imagen_url
+            FROM producto
+            WHERE id_tienda = :id_tienda
+            """
+        ),
+        {"id_tienda": id_tienda},
+    ).mappings().all()
+    delivery_location_ids = [
+        row[0]
+        for row in connection.execute(
+            text(
+                """
+                SELECT DISTINCT id_ubicacion_entrega
+                FROM pedido
+                WHERE id_tienda = :id_tienda
+                    AND id_ubicacion_entrega <> :id_ubicacion
+                """
+            ),
+            {
+                "id_tienda": id_tienda,
+                "id_ubicacion": store["id_ubicacion"],
+            },
+        ).all()
+    ]
+
+    statements = [
+        """
+        DELETE FROM comision
+        WHERE id_pedido IN (
+            SELECT id_pedido FROM pedido WHERE id_tienda = :id_tienda
+        )
+        """,
+        """
+        DELETE FROM pago
+        WHERE id_pedido IN (
+            SELECT id_pedido FROM pedido WHERE id_tienda = :id_tienda
+        )
+        """,
+        """
+        DELETE FROM asignacion_repartidor
+        WHERE id_pedido IN (
+            SELECT id_pedido FROM pedido WHERE id_tienda = :id_tienda
+        )
+        """,
+        """
+        DELETE FROM detalle_pedido
+        WHERE id_pedido IN (
+                SELECT id_pedido FROM pedido WHERE id_tienda = :id_tienda
+            )
+            OR id_producto IN (
+                SELECT id_producto FROM producto WHERE id_tienda = :id_tienda
+            )
+        """,
+        "DELETE FROM pedido WHERE id_tienda = :id_tienda",
+        """
+        DELETE FROM detalle_carrito
+        WHERE id_carrito IN (
+                SELECT id_carrito FROM carrito WHERE id_tienda = :id_tienda
+            )
+            OR id_producto IN (
+                SELECT id_producto FROM producto WHERE id_tienda = :id_tienda
+            )
+        """,
+        "DELETE FROM carrito WHERE id_tienda = :id_tienda",
+        """
+        DELETE FROM producto_categoria
+        WHERE id_producto IN (
+            SELECT id_producto FROM producto WHERE id_tienda = :id_tienda
+        )
+        """,
+        "DELETE FROM producto WHERE id_tienda = :id_tienda",
+        "DELETE FROM tienda_usuario WHERE id_tienda = :id_tienda",
+        "DELETE FROM tienda WHERE id_tienda = :id_tienda",
+        "DELETE FROM ubicacion WHERE id_ubicacion = :id_ubicacion",
+    ]
+
+    try:
+        for statement in statements:
+            connection.execute(
+                text(statement),
+                {
+                    "id_tienda": id_tienda,
+                    "id_ubicacion": store["id_ubicacion"],
+                },
+            )
+        for id_ubicacion in delivery_location_ids:
+            connection.execute(
+                text(
+                    """
+                    DELETE FROM ubicacion
+                    WHERE id_ubicacion = :id_ubicacion
+                        AND tipo_ubicacion = 'entrega'
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM pedido
+                            WHERE id_ubicacion_entrega = :id_ubicacion
+                        )
+                    """
+                ),
+                {"id_ubicacion": id_ubicacion},
+            )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return {
+        "id_tienda": id_tienda,
+        "logo_url": store["logo_url"],
+        "products": [dict(product) for product in product_rows],
+    }
 
 
 def has_store_role(session: Session, id_tienda: int, id_usuario: int, roles: set[str]) -> bool:

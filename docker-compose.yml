@@ -11,6 +11,7 @@ services:
     build: ./api-gateway
     ports:
       - "${API_GATEWAY_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
@@ -27,6 +28,7 @@ services:
     build: ./services/auth_service
     ports:
       - "${AUTH_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
 
@@ -34,6 +36,7 @@ services:
     build: ./services/users-service
     ports:
       - "${USERS_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
 
@@ -41,15 +44,18 @@ services:
     build: ./services/restaurant-service
     ports:
       - "${RESTAURANT_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
     volumes:
       - ./services/restaurant-service/uploads:/app/uploads
+      - ./services/catalog-service/uploads:/app/catalog-uploads
 
   catalog-service:
     build: ./services/catalog-service
     ports:
       - "${CATALOG_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
     volumes:
@@ -59,6 +65,7 @@ services:
     build: ./services/cart-service
     ports:
       - "${CART_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
@@ -69,6 +76,7 @@ services:
     build: ./services/orders-service
     ports:
       - "${ORDERS_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
 
@@ -76,6 +84,7 @@ services:
     build: ./services/payments-service
     ports:
       - "${PAYMENTS_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
@@ -85,6 +94,7 @@ services:
     build: ./services/delivery-service
     ports:
       - "${DELIVERY_SERVICE_PORT}:8000"
+    restart: unless-stopped
     env_file:
       - .env
     depends_on:
