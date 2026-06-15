@@ -7,7 +7,7 @@ import { useApp } from '../context/AppContext.tsx';
 export default function RestaurantPage() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const { restaurants, addToCart } = useApp();
+  const { restaurants, addToCart, loading } = useApp();
   const [categoryId, setCategoryId] = useState('');
   const restaurant = restaurants.find((entry) => entry.id === id);
   const menuCategories = useMemo(() => {
@@ -15,9 +15,19 @@ export default function RestaurantPage() {
     restaurant?.menu.forEach((product) => product.categories.forEach((category) => byId.set(category.id_categoria, category)));
     return Array.from(byId.values()).filter((category: any) => category.nombre?.toLowerCase() !== 'extra');
   }, [restaurant]);
-  const visibleMenu = restaurant?.menu.filter((product) =>
-    !product.isExtra && (!categoryId || product.categoryIds.includes(Number(categoryId)))
-  ) || [];
+  const visibleMenu = restaurant?.menu.filter((product) => (
+    categoryId
+      ? product.categoryIds.includes(Number(categoryId))
+      : !product.isExtra
+  )) || [];
+
+  if (loading) {
+    return (
+      <div role="status" className="rounded-lg bg-white p-8 text-center font-bold text-wine-800 shadow-sm">
+        Cargando tienda y menu...
+      </div>
+    );
+  }
 
   if (!restaurant) {
     return (
@@ -35,8 +45,8 @@ export default function RestaurantPage() {
         <ArrowLeft size={18} /> Volver
       </button>
       <section aria-labelledby="restaurant-title" className="overflow-hidden rounded-lg bg-white shadow-soft">
-        <div className="h-48 md:h-64">
-          <img src={restaurant.image} alt={restaurant.name} className="h-full w-full object-cover" />
+        <div className="h-48 bg-stone-100 p-4 md:h-64">
+          <img src={restaurant.logo} alt={`Logo de ${restaurant.name}`} className="h-full w-full object-contain" />
         </div>
         <div className="flex flex-col gap-4 p-5 md:flex-row md:items-end md:justify-between">
           <div className="flex gap-4">

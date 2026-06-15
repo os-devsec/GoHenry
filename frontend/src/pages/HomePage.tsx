@@ -6,10 +6,9 @@ import RestaurantCard from '../components/restaurant/RestaurantCard.tsx';
 import { useApp } from '../context/AppContext.tsx';
 
 export default function HomePage() {
-  const { restaurants, categories, addToCart, apiError } = useApp();
+  const { restaurants, categories, addToCart, apiError, loading } = useApp();
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const selectedCategory = categories.find((category) => String(category.id_categoria) === categoryId);
   const featuredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
     return restaurants.flatMap((restaurant) =>
@@ -20,12 +19,12 @@ export default function HomePage() {
             || product.name.toLowerCase().includes(query)
             || product.description?.toLowerCase().includes(query);
           const matchesCategory = !categoryId || product.categoryIds.includes(Number(categoryId));
-          const showExtra = selectedCategory?.nombre?.toLowerCase() === 'extra';
-          return matchesSearch && matchesCategory && (showExtra || !product.isExtra);
+          const hasActiveFilter = Boolean(query || categoryId);
+          return matchesSearch && matchesCategory && (hasActiveFilter || !product.isExtra);
         })
         .map((product) => ({ restaurant, product }))
     );
-  }, [restaurants, search, categoryId, selectedCategory?.nombre]);
+  }, [restaurants, search, categoryId]);
   const visibleRestaurants = restaurants.filter((restaurant) => {
     const query = search.trim().toLowerCase();
     return !query
@@ -65,6 +64,12 @@ export default function HomePage() {
         </div>
       </section>
 
+      {loading && (
+        <div role="status" className="rounded-lg bg-white p-6 text-center font-bold text-wine-800 shadow-sm">
+          Cargando tiendas y productos...
+        </div>
+      )}
+
       {activeOffers.length > 0 && (
         <section aria-labelledby="active-offers-title" className="space-y-3 rounded-lg bg-maize-100 p-5 shadow-sm">
           <div className="flex items-center gap-3">
@@ -86,7 +91,7 @@ export default function HomePage() {
         </section>
       )}
 
-      <section aria-labelledby="restaurants-title" className="space-y-3">
+      {!loading && <section aria-labelledby="restaurants-title" className="space-y-3">
         <div>
           <h2 id="restaurants-title" className="text-2xl font-black text-wine-900">Restaurantes</h2>
           <p className="text-sm text-stone-500">Tiendas disponibles dentro de la institucion.</p>
@@ -104,9 +109,9 @@ export default function HomePage() {
             />
           )}
         </ul>
-      </section>
+      </section>}
 
-      <section aria-labelledby="products-title" className="space-y-3">
+      {!loading && <section aria-labelledby="products-title" className="space-y-3">
         <div>
           <h2 id="products-title" className="text-2xl font-black text-wine-900">Productos</h2>
           <p className="text-sm text-stone-500">Listado rapido de productos con acceso a detalle y carrito.</p>
@@ -128,7 +133,7 @@ export default function HomePage() {
             />
           )}
         </ul>
-      </section>
+      </section>}
     </div>
   );
 }

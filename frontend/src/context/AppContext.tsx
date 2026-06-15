@@ -77,6 +77,7 @@ export function AppProvider({ children }) {
       ]);
       setCategories(categoryData.filter((category) => category.estado));
       const mapped = stores.map((store) => {
+        const storeLogo = storeLogoUrl(store.logo_url) || logoImage;
         const menu = products
           .filter((product) => product.id_tienda === store.id_tienda)
           .map((product) => {
@@ -120,8 +121,8 @@ export function AppProvider({ children }) {
           horario_apertura: store.horario_apertura || '08:00',
           horario_cierre: store.horario_cierre || '18:00',
           locationText: [store.nombre_lugar, store.referencia].filter(Boolean).join(' '),
-          image: foodImage,
-          logo: storeLogoUrl(store.logo_url) || logoImage,
+          image: storeLogo,
+          logo: storeLogo,
           tags: [store.nombre_lugar || 'Campus', store.horario_apertura || '08:00'],
           menu
         };

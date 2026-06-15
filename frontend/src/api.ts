@@ -15,7 +15,7 @@ async function request(path: string, options: RequestInit = {}) {
     response = await fetch(`${API_URL}${path}`, { ...options, headers });
   } catch (error) {
     const connectionError = new Error(
-      `No se pudo conectar con la API en ${API_URL}. Levanta el backend con docker compose up --build.`
+      'No pudimos cargar las tiendas en este momento. Intenta nuevamente en unos segundos.'
     ) as Error & { cause?: unknown };
     connectionError.cause = error;
     throw connectionError;
