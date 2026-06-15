@@ -14,7 +14,7 @@ final class DeliveryFeeCalculator {
         if (originZone != null && destinationZone != null && !originZone.equals(destinationZone)) {
             return 1.5;
         }
-        if (originZone == null && destinationZone != null) {
+        if ((originZone == null) != (destinationZone == null)) {
             return 1.0;
         }
         return 0.5;

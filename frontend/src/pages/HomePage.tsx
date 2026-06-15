@@ -20,7 +20,7 @@ export default function HomePage() {
             || product.description?.toLowerCase().includes(query);
           const matchesCategory = !categoryId || product.categoryIds.includes(Number(categoryId));
           const hasActiveFilter = Boolean(query || categoryId);
-          return matchesSearch && matchesCategory && (hasActiveFilter || !product.isExtra);
+          return matchesSearch && matchesCategory && (hasActiveFilter || !product.isOnlyExtra);
         })
         .map((product) => ({ restaurant, product }))
     );
@@ -33,7 +33,7 @@ export default function HomePage() {
   });
   const activeOffers = restaurants.flatMap((restaurant) =>
     restaurant.menu
-      .filter((product) => product.discountActive && !product.isExtra && product.available)
+      .filter((product) => product.discountActive && !product.isOnlyExtra && product.available)
       .map((product) => ({ restaurant, product }))
   );
 
@@ -105,7 +105,7 @@ export default function HomePage() {
           {!restaurants.length && (
             <EmptyState
               title="Aun no hay tiendas registradas"
-              detail={apiError || 'Crea una tienda desde la API para empezar a cargar productos reales.'}
+              detail={apiError || 'No hay tiendas disponibles en este momento.'}
             />
           )}
         </ul>
@@ -129,7 +129,7 @@ export default function HomePage() {
           {!featuredProducts.length && (
             <EmptyState
               title="Aun no hay productos"
-              detail="Cuando registres productos en la BDD apareceran aqui."
+              detail="No hay productos disponibles en este momento."
             />
           )}
         </ul>

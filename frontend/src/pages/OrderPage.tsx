@@ -3,6 +3,7 @@ import { Bike, CheckCircle2, MessageCircle, PackageCheck, ShoppingBag, Store, XC
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext.tsx';
 import { formatCurrency } from '../utils/format.ts';
+import { customerErrorMessage } from '../utils/errors.ts';
 
 export default function OrderPage() {
   const { cancelOrder, currentUser, dismissLastOrder, lastOrder, refreshLatestOrder, refreshOrder } = useApp();
@@ -73,7 +74,7 @@ export default function OrderPage() {
       setError('');
       await cancelOrder(order.id_pedido);
     } catch (apiError) {
-      setError(apiError.message);
+      setError(customerErrorMessage(apiError, 'No pudimos cancelar el pedido. Intenta nuevamente.'));
       await refreshOrder(order.id_pedido).catch(() => null);
     }
   };

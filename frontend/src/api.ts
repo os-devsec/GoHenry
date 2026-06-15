@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
 
 async function request(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem('token');
@@ -21,8 +21,12 @@ async function request(path: string, options: RequestInit = {}) {
     throw connectionError;
   }
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Error de API' }));
-    throw new Error(error.detail || 'Error de API');
+    const error = await response.json().catch(() => ({}));
+    const requestError = new Error(error.detail || 'No pudimos completar la solicitud.') as Error & {
+      status?: number;
+    };
+    requestError.status = response.status;
+    throw requestError;
   }
   return response.json();
 }

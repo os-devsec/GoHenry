@@ -8,7 +8,9 @@ services:
     command: python init_sqlserver.py --reset
 
   api-gateway:
-    build: ./api-gateway
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
     ports:
       - "${API_GATEWAY_PORT}:8000"
     restart: unless-stopped

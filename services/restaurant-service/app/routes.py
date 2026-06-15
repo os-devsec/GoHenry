@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from sqlmodel import Session
 
 from .database import get_session
-from .schemas import PersonalRequest, StoreStaffRoleRequest, TiendaRequest
+from .schemas import PersonalRequest, StoreAvailabilityRequest, StoreStaffRoleRequest, TiendaRequest
 from .security import current_user, require_internal_service
 from . import services
 
@@ -43,13 +43,14 @@ def update_store(
     return services.update_store(session, id_tienda, payload, user)
 
 
-@router.delete("/api/v1/tiendas/{id_tienda}")
-def delete_store(
+@router.patch("/api/v1/tiendas/{id_tienda}/disponibilidad")
+def update_store_availability(
     id_tienda: int,
+    payload: StoreAvailabilityRequest,
     user: dict[str, Any] = Depends(current_user),
     session: Session = Depends(get_session),
-) -> dict[str, bool]:
-    return services.delete_store(session, id_tienda, user)
+) -> dict[str, Any]:
+    return services.update_store_availability(session, id_tienda, payload.estado, user)
 
 
 @router.delete("/api/v1/tiendas/{id_tienda}")

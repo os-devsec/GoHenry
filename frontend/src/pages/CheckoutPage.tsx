@@ -6,10 +6,11 @@ import SummaryRow from '../components/common/SummaryRow.tsx';
 import { api } from '../api.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { formatCurrency } from '../utils/format.ts';
+import { customerErrorMessage } from '../utils/errors.ts';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { cart, subtotal, totalDiscount, total, updateQuantity, checkout } = useApp();
+  const { cart, cartError, subtotal, totalDiscount, total, updateQuantity, checkout } = useApp();
   const [orderType, setOrderType] = useState('delivery');
   const [locations, setLocations] = useState<any[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
@@ -76,10 +77,10 @@ export default function CheckoutPage() {
         .then((quote) => {
           if (active) setDeliveryFee(Number(quote.costo_envio || 0));
         })
-        .catch((quoteError) => {
+        .catch((_quoteError) => {
           if (active) {
             setDeliveryFee(0);
-            setDeliveryQuoteError(quoteError.message);
+            setDeliveryQuoteError('No pudimos calcular el envio. Intenta nuevamente.');
           }
         })
         .finally(() => {
@@ -114,7 +115,7 @@ export default function CheckoutPage() {
       });
       navigate('/pedido');
     } catch (apiError) {
-      setError(apiError.message);
+      setError(customerErrorMessage(apiError, 'No pudimos confirmar tu pedido. Intenta nuevamente.'));
     } finally {
       setSubmitting(false);
     }
@@ -165,6 +166,7 @@ export default function CheckoutPage() {
           <SummaryRow label="Total" value={formatCurrency(totalWithDelivery)} strong />
         </dl>
         <div className="mt-5 space-y-3">
+          {cartError && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{cartError}</p>}
           <fieldset className="space-y-2">
             <legend className="text-sm font-black text-stone-700">Como recibiras tu pedido</legend>
             <div className="grid grid-cols-2 gap-2">
@@ -223,7 +225,7 @@ export default function CheckoutPage() {
           )}
           {deliveryQuoteError && (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
-              No se pudo cotizar el envio: {deliveryQuoteError}
+              {deliveryQuoteError}
             </p>
           )}
           </>

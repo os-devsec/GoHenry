@@ -1,6 +1,6 @@
 # Documentacion de Servicios - GoHenryGo
 
-Fecha de validacion: 2026-06-10
+Fecha de validacion: 2026-06-15
 
 ## Resumen
 
@@ -224,8 +224,9 @@ Endpoints principales:
 
 | Metodo | Ruta | Descripcion |
 | --- | --- | --- |
-| `GET` | `/api/v1/tiendas` | Lista tiendas activas |
+| `GET` | `/api/v1/tiendas` | Lista tiendas con disponibilidad manual y por horario |
 | `POST` | `/api/v1/tiendas` | Crea tienda, solo admin plataforma |
+| `PATCH` | `/api/v1/tiendas/{id}/disponibilidad` | Abre o cierra manualmente una tienda |
 | `POST` | `/api/v1/tiendas/{id}/logo` | Sube logo y guarda `logo_url` |
 | `GET` | `/api/v1/tiendas/{id}/personal` | Lista personal de tienda |
 | `POST` | `/api/v1/tiendas/{id}/personal` | Agrega personal |
@@ -238,6 +239,10 @@ Funciones principales:
 | `current_user` | Lee usuario desde token |
 | `require_platform_admin` | Exige admin plataforma |
 | `require_store_role` | Exige rol de tienda |
+
+La respuesta de tienda incluye `disponible` y `cerrada_por_horario`. El campo
+`estado` controla el cierre manual, mientras que `disponible` combina ese valor
+con el horario de atencion en `America/Guayaquil`.
 
 ## Catalog Service
 
@@ -378,12 +383,16 @@ Funciones principales:
 | `items` | Devuelve detalle del pedido |
 | `asignacion` | Devuelve ultima asignacion de repartidor |
 
+La creacion del pedido bloquea las filas de producto, valida el stock acumulado
+por producto y descuenta existencias dentro de la misma transaccion. Al cancelar
+un pedido pendiente o rechazarlo, las unidades se devuelven al inventario.
+
 Reglas de envio:
 
 | Ruta | Costo |
 | --- | ---: |
 | Misma zona o ubicaciones generales | `$0.50` |
-| Zona general hacia Deportes o Automotriz/Gastronomia | `$1.00` |
+| Entre zona general y Deportes o Automotriz/Gastronomia, en cualquier sentido | `$1.00` |
 | Deportes hacia Automotriz/Gastronomia, o viceversa | `$1.50` |
 
 El endpoint de cotizacion acepta tanto `id_ubicacion_entrega` como una ubicacion
@@ -492,6 +501,14 @@ Logica relevante:
 | `login` / `register` | Autenticacion y recarga de datos |
 
 La pagina principal contiene una seccion `Ofertas activas`. Solo muestra productos disponibles cuyo horario de descuento esta vigente. Los datos del catalogo se actualizan cada minuto para reflejar automaticamente el inicio o fin de una oferta.
+
+Los productos cuya unica categoria es `Extra` se ocultan del menu principal. Si
+un producto tiene `Extra` y otra categoria, se muestra normalmente y tambien
+puede ofrecerse como adicional.
+
+En produccion, el Dockerfile del API Gateway construye React y sirve sus archivos
+estaticos, incluyendo el fallback de rutas SPA. El frontend usa el mismo origen
+para llamar a la API, por lo que funciona desde computadoras y celulares.
 
 ## Flujo de Pedido
 

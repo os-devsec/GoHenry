@@ -30,10 +30,23 @@ def update_store(
     user: dict[str, Any],
 ) -> dict[str, Any]:
     require_store_role(session, id_tienda, user, {"administrador"})
-    store = repositories.get_active_store(session, id_tienda)
+    store = repositories.get_store(session, id_tienda)
     if not store:
         raise HTTPException(status_code=404, detail="Tienda no encontrada")
     return repositories.update_store(session, store, payload)
+
+
+def update_store_availability(
+    session: Session,
+    id_tienda: int,
+    estado: bool,
+    user: dict[str, Any],
+) -> dict[str, Any]:
+    require_store_role(session, id_tienda, user, {"administrador"})
+    store = repositories.get_store(session, id_tienda)
+    if not store:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada")
+    return repositories.update_store_availability(session, store, estado)
 
 
 def delete_store(
@@ -63,7 +76,7 @@ async def upload_store_logo(
     if not logo.content_type or not logo.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Archivo de logo invalido")
     require_store_role(session, id_tienda, user, {"administrador"})
-    store = repositories.get_active_store(session, id_tienda)
+    store = repositories.get_store(session, id_tienda)
     if not store:
         raise HTTPException(status_code=404, detail="Tienda no encontrada")
 
@@ -95,7 +108,7 @@ def add_store_staff(session: Session, id_tienda: int, payload: PersonalRequest, 
     if payload.cargo not in {"administrador", "empleado"}:
         raise HTTPException(status_code=400, detail="Cargo invalido")
     require_store_role(session, id_tienda, user, {"administrador"})
-    if not repositories.get_active_store(session, id_tienda):
+    if not repositories.get_store(session, id_tienda):
         raise HTTPException(status_code=404, detail="Tienda no encontrada")
 
     staff_user = user_client.resolve_staff_user(payload)

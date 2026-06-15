@@ -17,8 +17,8 @@ export default function LoginPage() {
       setError('');
       await login(form.correo, form.password);
       navigate(location.state?.from || '/', { replace: true });
-    } catch (apiError) {
-      setError(apiError.message);
+    } catch (_error) {
+      setError('No se pudo iniciar sesion. Revisa tu correo y contrasena.');
     }
   };
 

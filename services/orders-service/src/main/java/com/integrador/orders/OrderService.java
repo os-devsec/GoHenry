@@ -8,6 +8,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -118,28 +119,44 @@ public class OrderService {
         if (!Utils.set("delivery", "pickup").contains(tipo)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El tipo de pedido debe ser delivery o pickup");
         }
+        validarTiendaDisponible(idTienda);
         int idUbicacionEntrega = resolverUbicacionEntrega(body, idTienda, tipo);
         List<Map<String, Object>> requestItems = (List<Map<String, Object>>) body.getOrDefault("items", Collections.emptyList());
         if (requestItems.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El pedido debe incluir al menos un plato");
         }
 
-        double subtotal = 0;
-        double totalDescuento = 0;
-        List<Map<String, Object>> normalized = new ArrayList<>();
+        Map<Integer, Integer> requestedQuantities = new LinkedHashMap<>();
         for (Map<String, Object> item : requestItems) {
             int productId = Utils.intValue(Utils.first(item, "id_producto", "id"), 0);
             int qty = Utils.intValue(Utils.first(item, "cantidad", "quantity"), 1);
-            if (qty <= 0) {
+            if (productId <= 0 || qty <= 0) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La cantidad de cada producto debe ser mayor a cero");
             }
+            requestedQuantities.put(productId, requestedQuantities.getOrDefault(productId, 0) + qty);
+        }
+
+        double subtotal = 0;
+        double totalDescuento = 0;
+        List<Map<String, Object>> normalized = new ArrayList<>();
+        for (Map.Entry<Integer, Integer> requested : requestedQuantities.entrySet()) {
+            int productId = requested.getKey();
+            int qty = requested.getValue();
             Map<String, Object> product = jdbc.queryForMap(
-                    "SELECT id_tienda, estado, precio, descuento_porcentaje, descuento_inicio, descuento_fin " +
-                            "FROM producto WHERE id_producto = ?",
+                    "SELECT id_tienda, nombre, estado, stock, precio, descuento_porcentaje, descuento_inicio, descuento_fin " +
+                            "FROM producto WITH (UPDLOCK, ROWLOCK) WHERE id_producto = ?",
                     productId
             );
             if (Utils.intValue(product.get("id_tienda"), 0) != idTienda || Utils.intValue(product.get("estado"), 0) != 1) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Todos los productos deben estar activos y pertenecer a la tienda");
+            }
+            int stock = Utils.intValue(product.get("stock"), 0);
+            if (qty > stock) {
+                String productName = Utils.stringValue(product.get("nombre"), "este producto");
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "No hay stock suficiente de " + productName + ". Disponibles: " + stock
+                );
             }
             double price = Utils.doubleValue(product.get("precio"), 0);
             double discountPercentage = descuentoActivo(product)
@@ -173,6 +190,15 @@ public class OrderService {
         for (Map<String, Object> item : normalized) {
             jdbc.update("INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario, descuento_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
                     idPedido, item.get("id_producto"), item.get("cantidad"), item.get("precio_unitario"), item.get("descuento_unitario"), item.get("subtotal"));
+            int updated = jdbc.update(
+                    "UPDATE producto SET stock = stock - ? WHERE id_producto = ? AND stock >= ?",
+                    item.get("cantidad"),
+                    item.get("id_producto"),
+                    item.get("cantidad")
+            );
+            if (updated == 0) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "El stock cambio mientras confirmabas el pedido");
+            }
         }
         return pedido(idPedido);
     }
@@ -211,10 +237,12 @@ public class OrderService {
         return quote;
     }
 
+    @Transactional
     public Map<String, Object> actualizarEstado(int id, Map<String, Object> body, Map<String, Object> user) {
         Map<String, Object> orderState = jdbc.queryForMap(
                 "SELECT p.id_tienda, p.tipo_pedido, ep.nombre AS estado " +
-                        "FROM pedido p JOIN estado_pedido ep ON ep.id_estado_pedido = p.id_estado_pedido " +
+                        "FROM pedido p WITH (UPDLOCK, ROWLOCK) " +
+                        "JOIN estado_pedido ep ON ep.id_estado_pedido = p.id_estado_pedido " +
                         "WHERE p.id_pedido = ?",
                 id
         );
@@ -237,9 +265,13 @@ public class OrderService {
         }
         Integer estadoId = jdbc.queryForObject("SELECT id_estado_pedido FROM estado_pedido WHERE nombre = ?", Integer.class, estado);
         jdbc.update("UPDATE pedido SET id_estado_pedido = ? WHERE id_pedido = ?", estadoId, id);
+        if ("rechazado".equals(estado)) {
+            restaurarStock(id);
+        }
         return pedido(id);
     }
 
+    @Transactional
     public Map<String, Object> cancelarPedido(int id, Map<String, Object> user) {
         int idUsuario = Utils.intValue(user.get("id_usuario"), 0);
         Integer canceladoId = jdbc.queryForObject(
@@ -259,6 +291,7 @@ public class OrderService {
                     "Solo puedes cancelar tu pedido antes de que la tienda lo acepte"
             );
         }
+        restaurarStock(id);
         return pedido(id);
     }
 
@@ -405,6 +438,40 @@ public class OrderService {
 
     private String textoUbicacion(Object nombre, Object referencia) {
         return (Utils.stringValue(nombre, "") + " " + Utils.stringValue(referencia, "")).trim();
+    }
+
+    private void validarTiendaDisponible(int idTienda) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT estado, horario_apertura, horario_cierre FROM tienda WHERE id_tienda = ?",
+                idTienda
+        );
+        if (rows.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tienda no encontrada");
+        }
+        Map<String, Object> store = rows.get(0);
+        if (Utils.intValue(store.get("estado"), 0) != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La tienda esta cerrada");
+        }
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+            LocalTime opening = LocalTime.parse(Utils.stringValue(store.get("horario_apertura"), ""), formatter);
+            LocalTime closing = LocalTime.parse(Utils.stringValue(store.get("horario_cierre"), ""), formatter);
+            LocalTime now = LocalTime.now(ZoneId.of("America/Guayaquil"));
+            if (now.isBefore(opening) || !now.isBefore(closing)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "La tienda esta fuera de su horario de atencion");
+            }
+        } catch (DateTimeParseException error) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "La tienda no esta disponible en este momento");
+        }
+    }
+
+    private void restaurarStock(int idPedido) {
+        jdbc.update(
+                "UPDATE p SET p.stock = p.stock + dp.cantidad " +
+                        "FROM producto p JOIN detalle_pedido dp ON dp.id_producto = p.id_producto " +
+                        "WHERE dp.id_pedido = ?",
+                idPedido
+        );
     }
 
     private boolean descuentoActivo(Map<String, Object> product) {

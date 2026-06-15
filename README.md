@@ -38,4 +38,8 @@ Frontend: `http://localhost:5173`
 
 Gateway: `http://localhost:8000`
 
+En produccion, la imagen del API Gateway compila y sirve tambien el frontend.
+La aplicacion y la API quedan disponibles desde el mismo host del balanceador,
+sin ejecutar Vite como proceso separado.
+
 La documentacion tecnica completa se encuentra en [`docs/DOCUMENTACION_SERVICIOS.md`](docs/DOCUMENTACION_SERVICIOS.md).

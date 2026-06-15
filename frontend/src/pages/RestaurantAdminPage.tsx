@@ -21,6 +21,7 @@ export default function RestaurantAdminPage() {
     deleteMenuItem,
     removeStoreStaff,
     toggleAvailability,
+    toggleStoreAvailability,
     updateMenuItem,
     updateStore
   } = useApp();
@@ -135,8 +136,22 @@ export default function RestaurantAdminPage() {
       setStoreMessage('');
       await updateStore(restaurant.id_tienda, storeForm);
       setStoreMessage('Informacion y horario actualizados correctamente.');
-    } catch (apiError) {
-      setStoreError(apiError.message);
+    } catch (_error) {
+      setStoreError('No se pudo actualizar la tienda. Revisa los datos e intenta nuevamente.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeStoreAvailability = async () => {
+    try {
+      setSaving(true);
+      setStoreError('');
+      setStoreMessage('');
+      await toggleStoreAvailability(restaurant.id_tienda);
+      setStoreMessage(restaurant.manuallyOpen ? 'Tienda cerrada manualmente.' : 'Tienda habilitada correctamente.');
+    } catch (_error) {
+      setStoreError('No se pudo cambiar el estado de la tienda.');
     } finally {
       setSaving(false);
     }
@@ -233,7 +248,11 @@ export default function RestaurantAdminPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <AdminMetric icon={<Store size={20} />} label="Estado" value="Abierto" />
+        <AdminMetric
+          icon={<Store size={20} />}
+          label="Estado"
+          value={restaurant.available ? 'Abierta' : restaurant.closedBySchedule ? 'Cerrada por horario' : 'Cerrada manualmente'}
+        />
         <AdminMetric
           icon={<CalendarClock size={20} />}
           label="Horario"
@@ -249,9 +268,19 @@ export default function RestaurantAdminPage() {
               <h2 className="text-xl font-black text-wine-900">Informacion del restaurante</h2>
               <p className="text-sm text-stone-500">Solo administradores de plataforma o de esta tienda pueden modificarla.</p>
             </div>
-            <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-wine-600 px-4 py-2 text-sm font-black text-white">
-              <Save size={16} /> Guardar
-            </button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={changeStoreAvailability}
+                className={`rounded-full px-4 py-2 text-sm font-black text-white ${restaurant.manuallyOpen ? 'bg-stone-700' : 'bg-green-700'}`}
+              >
+                {restaurant.manuallyOpen ? 'Cerrar tienda' : 'Abrir tienda'}
+              </button>
+              <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-wine-600 px-4 py-2 text-sm font-black text-white">
+                <Save size={16} /> Guardar
+              </button>
+            </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <Field label="Nombre"><input className="field" value={storeForm.nombre} onChange={(event) => setStoreForm({ ...storeForm, nombre: event.target.value })} /></Field>

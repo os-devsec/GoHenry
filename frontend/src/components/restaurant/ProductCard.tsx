@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { formatCurrency } from '../../utils/format.ts';
 
 export default function ProductCard({ product, restaurant, onAdd }) {
+  const canOrder = product.available && restaurant.available;
   return (
     <article className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
       <img src={product.image} alt="" className="h-28 w-full rounded-lg object-cover" />
@@ -40,9 +41,10 @@ export default function ProductCard({ product, restaurant, onAdd }) {
           <button
             type="button"
             onClick={() => onAdd(restaurant, product)}
-            aria-label={`Agregar ${product.name} al carrito`}
-            className="grid h-9 w-9 place-items-center rounded-full bg-maize-300 text-wine-900"
-            title="Agregar"
+            disabled={!canOrder}
+            aria-label={canOrder ? `Agregar ${product.name} al carrito` : `${product.name} no disponible`}
+            className="grid h-9 w-9 place-items-center rounded-full bg-maize-300 text-wine-900 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-500"
+            title={canOrder ? 'Agregar' : 'No disponible'}
           >
             <Plus size={16} />
           </button>

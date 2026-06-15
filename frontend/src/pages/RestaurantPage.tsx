@@ -18,7 +18,7 @@ export default function RestaurantPage() {
   const visibleMenu = restaurant?.menu.filter((product) => (
     categoryId
       ? product.categoryIds.includes(Number(categoryId))
-      : !product.isExtra
+      : !product.isOnlyExtra
   )) || [];
 
   if (loading) {
@@ -33,7 +33,7 @@ export default function RestaurantPage() {
     return (
       <div className="rounded-lg border border-dashed border-wine-200 bg-white p-8 text-center">
         <h1 className="text-2xl font-black text-wine-900">Tienda no encontrada</h1>
-        <p className="mt-2 text-sm text-stone-500">Cuando crees tiendas en la BDD apareceran disponibles para navegar.</p>
+        <p className="mt-2 text-sm text-stone-500">Esta tienda no esta disponible.</p>
         <button type="button" onClick={() => navigate('/')} className="mt-5 rounded-full bg-wine-600 px-5 py-3 font-black text-white">Volver al inicio</button>
       </div>
     );
@@ -61,6 +61,12 @@ export default function RestaurantPage() {
           </div>
         </div>
       </section>
+
+      {!restaurant.available && (
+        <p role="status" className="rounded-lg bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+          Esta tienda esta cerrada o fuera de su horario de atencion. Puedes ver el menu, pero no realizar pedidos.
+        </p>
+      )}
 
       <section aria-labelledby="restaurant-menu-title" className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

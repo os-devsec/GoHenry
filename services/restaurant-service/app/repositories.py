@@ -1,4 +1,6 @@
+from datetime import datetime, time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -11,7 +13,6 @@ def list_stores(session: Session) -> list[dict[str, Any]]:
     rows = session.exec(
         select(Tienda, Ubicacion)
         .join(Ubicacion, Ubicacion.id_ubicacion == Tienda.id_ubicacion, isouter=True)
-        .where(Tienda.estado == True)
         .order_by(Tienda.id_tienda)
     ).all()
     return [store_with_location(store, location) for store, location in rows]
@@ -38,13 +39,11 @@ def create_store(session: Session, payload: TiendaRequest) -> dict[str, Any]:
     session.add(store)
     session.commit()
     session.refresh(store)
-    return store.model_dump()
+    return get_store_with_location(session, store.id_tienda or 0) or store.model_dump()
 
 
-def get_active_store(session: Session, id_tienda: int) -> Tienda | None:
-    return session.exec(
-        select(Tienda).where(Tienda.id_tienda == id_tienda, Tienda.estado == True)  # noqa: E712
-    ).first()
+def get_store(session: Session, id_tienda: int) -> Tienda | None:
+    return session.get(Tienda, id_tienda)
 
 
 def get_store_with_location(session: Session, id_tienda: int) -> dict[str, Any] | None:
@@ -83,6 +82,14 @@ def update_store(session: Session, store: Tienda, payload: TiendaRequest) -> dic
         session.flush()
         store.id_ubicacion = location.id_ubicacion or 0
 
+    session.add(store)
+    session.commit()
+    session.refresh(store)
+    return get_store_with_location(session, store.id_tienda or 0) or store.model_dump()
+
+
+def update_store_availability(session: Session, store: Tienda, estado: bool) -> dict[str, Any]:
+    store.estado = estado
     session.add(store)
     session.commit()
     session.refresh(store)
@@ -255,7 +262,6 @@ def list_user_store_staff(session: Session, id_usuario: int) -> list[dict[str, A
         .where(
             StoreStaff.id_usuario == id_usuario,
             StoreStaff.estado == True,  # noqa: E712
-            Tienda.estado == True,  # noqa: E712
         )
         .order_by(Tienda.nombre)
     ).all()
@@ -305,4 +311,18 @@ def store_with_location(store: Tienda, location: Ubicacion | None) -> dict[str, 
     data = store.model_dump()
     data["nombre_lugar"] = location.nombre_lugar if location else None
     data["referencia"] = location.referencia if location else None
+    manually_open = bool(store.estado)
+    within_schedule = store_is_within_schedule(store)
+    data["disponible"] = manually_open and within_schedule
+    data["cerrada_por_horario"] = manually_open and not within_schedule
     return data
+
+
+def store_is_within_schedule(store: Tienda) -> bool:
+    try:
+        opening = time.fromisoformat(store.horario_apertura)
+        closing = time.fromisoformat(store.horario_cierre)
+    except ValueError:
+        return False
+    now = datetime.now(ZoneInfo("America/Guayaquil")).time().replace(second=0, microsecond=0)
+    return opening <= now < closing

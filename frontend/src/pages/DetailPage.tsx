@@ -7,7 +7,7 @@ import { formatCurrency } from '../utils/format.ts';
 export default function DetailPage() {
   const navigate = useNavigate();
   const { restaurantId, productId } = useParams();
-  const { restaurants, addToCart } = useApp();
+  const { restaurants, addToCart, cartError } = useApp();
   const [quantity, setQuantity] = useState(1);
   const [selectedExtraIds, setSelectedExtraIds] = useState<number[]>([]);
   const restaurant = restaurants.find((entry) => entry.id === restaurantId);
@@ -18,7 +18,7 @@ export default function DetailPage() {
     return (
       <div className="rounded-lg border border-dashed border-wine-200 bg-white p-8 text-center">
         <h1 className="text-2xl font-black text-wine-900">Producto no encontrado</h1>
-        <p className="mt-2 text-sm text-stone-500">Crea tiendas y productos en la BDD para ver detalles reales.</p>
+        <p className="mt-2 text-sm text-stone-500">Este producto no esta disponible.</p>
         <button type="button" onClick={() => navigate('/')} className="mt-5 rounded-full bg-wine-600 px-5 py-3 font-black text-white">Volver al inicio</button>
       </div>
     );
@@ -92,15 +92,17 @@ export default function DetailPage() {
                 <Minus size={16} />
               </button>
               <span aria-live="polite" className="w-8 text-center font-black">{quantity}</span>
-              <button type="button" aria-label="Aumentar cantidad" aria-describedby="quantity-label" onClick={() => setQuantity(quantity + 1)} className="grid h-9 w-9 place-items-center rounded-full bg-maize-300 text-wine-900">
+              <button type="button" disabled={quantity >= Number(product.stock || 0)} aria-label="Aumentar cantidad" aria-describedby="quantity-label" onClick={() => setQuantity(Math.min(Number(product.stock || 0), quantity + 1))} className="grid h-9 w-9 place-items-center rounded-full bg-maize-300 text-wine-900 disabled:cursor-not-allowed disabled:bg-stone-200">
                 <Plus size={16} />
               </button>
             </div>
           </div>
 
+          {cartError && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{cartError}</p>}
+
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <button type="button" onClick={addSelected} className="inline-flex items-center justify-center gap-2 rounded-full bg-wine-600 px-5 py-3 font-black text-white">
-              <ShoppingBag size={18} /> Agregar
+            <button type="button" disabled={!product.available || !restaurant.available} onClick={addSelected} className="inline-flex items-center justify-center gap-2 rounded-full bg-wine-600 px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:bg-stone-300">
+              <ShoppingBag size={18} /> {product.available && restaurant.available ? 'Agregar' : 'No disponible'}
             </button>
           </div>
         </div>

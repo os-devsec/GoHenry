@@ -21,6 +21,11 @@ class DeliveryFeeCalculatorTest {
     }
 
     @Test
+    void chargesIntermediateRateFromSpecialZoneToGeneralArea() {
+        assertEquals(1.0, DeliveryFeeCalculator.calculate("Automotriz", "Edificio Principal"));
+    }
+
+    @Test
     void handlesAccentsAndReferences() {
         assertEquals(1.5, DeliveryFeeCalculator.calculate(
                 "Facultad de Gastronomía - bloque A",

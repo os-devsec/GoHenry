@@ -50,6 +50,7 @@ export function AppProvider({ children }) {
   const [lastOrder, setLastOrder] = useState(() => storedJson('lastOrder', null));
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
+  const [cartError, setCartError] = useState('');
 
   const refreshCurrentUser = async () => {
     const token = localStorage.getItem('token');
@@ -78,6 +79,7 @@ export function AppProvider({ children }) {
       setCategories(categoryData.filter((category) => category.estado));
       const mapped = stores.map((store) => {
         const storeLogo = storeLogoUrl(store.logo_url) || logoImage;
+        const storeAvailable = Boolean(store.disponible);
         const menu = products
           .filter((product) => product.id_tienda === store.id_tienda)
           .map((product) => {
@@ -99,13 +101,16 @@ export function AppProvider({ children }) {
             discountActive,
             discountStart: product.descuento_inicio || '',
             discountEnd: product.descuento_fin || '',
-            available: product.estado,
+            available: Boolean(product.estado) && Number(product.stock || 0) > 0 && storeAvailable,
             categories: Array.isArray(product.categorias) ? product.categorias : [],
             categoryIds: Array.isArray(product.categorias)
               ? product.categorias.map((category) => category.id_categoria)
               : [],
             isExtra: Array.isArray(product.categorias)
               && product.categorias.some((category) => category.nombre?.toLowerCase() === 'extra'),
+            isOnlyExtra: Array.isArray(product.categorias)
+              && product.categorias.length > 0
+              && product.categorias.every((category) => category.nombre?.toLowerCase() === 'extra'),
             image: productImageUrl(product.imagen_url) || foodImage
           };
           });
@@ -120,6 +125,9 @@ export function AppProvider({ children }) {
           referencia: store.referencia || '',
           horario_apertura: store.horario_apertura || '08:00',
           horario_cierre: store.horario_cierre || '18:00',
+          manuallyOpen: Boolean(store.estado),
+          available: storeAvailable,
+          closedBySchedule: Boolean(store.cerrada_por_horario),
           locationText: [store.nombre_lugar, store.referencia].filter(Boolean).join(' '),
           image: storeLogo,
           logo: storeLogo,
@@ -134,10 +142,15 @@ export function AppProvider({ children }) {
       });
       setCart((current) => current.map((item) => {
         const latest = latestProducts.get(item.id);
-        return latest ? { ...item, ...latest, quantity: item.quantity } : item;
-      }));
-    } catch (error) {
-      setApiError(error.message);
+        if (!latest || Number(latest.stock || 0) <= 0) return null;
+        return {
+          ...item,
+          ...latest,
+          quantity: Math.min(item.quantity, Number(latest.stock || 0))
+        };
+      }).filter(Boolean));
+    } catch (_error) {
+      setApiError('No pudimos cargar las tiendas en este momento. Intenta nuevamente.');
       setRestaurants([]);
     } finally {
       setLoading(false);
@@ -200,17 +213,30 @@ export function AppProvider({ children }) {
   }, [cart]);
 
   const addToCart = (restaurant, item) => {
-    if (!item.available) return;
+    if (!restaurant.available) {
+      setCartError('La tienda no esta disponible en este momento.');
+      return;
+    }
+    if (!item.available || Number(item.stock || 0) <= 0) {
+      setCartError('Este producto no tiene stock disponible.');
+      return;
+    }
 
     setCart((current) => {
       const restaurantId = restaurant.id_tienda || Number(restaurant.id);
       const sameRestaurant = current.filter((entry) => entry.restaurantId === restaurantId);
       const found = sameRestaurant.find((entry) => entry.id === item.id);
       if (found) {
+        if (found.quantity >= Number(item.stock || 0)) {
+          setCartError(`Solo hay ${item.stock} unidades disponibles de ${item.name}.`);
+          return current;
+        }
+        setCartError('');
         return sameRestaurant.map((entry) => (
           entry.id === item.id ? { ...entry, quantity: entry.quantity + 1 } : entry
         ));
       }
+      setCartError('');
       return [...sameRestaurant, {
         ...item,
         quantity: 1,
@@ -223,11 +249,19 @@ export function AppProvider({ children }) {
   };
 
   const updateQuantity = (itemId, amount) => {
-    setCart((current) =>
-      current
-        .map((item) => (item.id === itemId ? { ...item, quantity: Math.max(0, item.quantity + amount) } : item))
-        .filter((item) => item.quantity > 0)
-    );
+    setCart((current) => current
+      .map((item) => {
+        if (item.id !== itemId) return item;
+        const requested = Math.max(0, item.quantity + amount);
+        const stock = Number(item.stock || 0);
+        if (requested > stock) {
+          setCartError(`Solo hay ${stock} unidades disponibles de ${item.name}.`);
+          return item;
+        }
+        setCartError('');
+        return { ...item, quantity: requested };
+      })
+      .filter((item) => item.quantity > 0));
   };
 
   const addMenuItem = async (restaurantId, item) => {
@@ -305,6 +339,16 @@ export function AppProvider({ children }) {
     return store;
   };
 
+  const toggleStoreAvailability = async (storeId) => {
+    const restaurant = restaurants.find((entry) => entry.id_tienda === storeId);
+    const store = await api.patch(`/api/v1/tiendas/${storeId}/disponibilidad`, {
+      estado: !restaurant?.manuallyOpen
+    });
+    await refreshData();
+    await refreshCurrentUser();
+    return store;
+  };
+
   const addStoreStaff = async (storeId, payload) => {
     const staff = await api.post(`/api/v1/tiendas/${storeId}/personal`, payload);
     await refreshCurrentUser();
@@ -333,22 +377,28 @@ export function AppProvider({ children }) {
 
   const login = async (correo, password) => {
     const result = await api.post('/api/v1/auth/login', { correo, password });
+    localStorage.removeItem('cart');
     localStorage.setItem('token', result.token);
     localStorage.setItem('usuario', JSON.stringify(result.usuario));
     localStorage.removeItem('lastOrder');
     setCurrentUser(result.usuario);
     setLastOrder(null);
+    setCart([]);
+    setCartError('');
     await refreshData(result.usuario);
     return result.usuario;
   };
 
   const register = async (payload) => {
     const result = await api.post('/api/v1/auth/register', payload);
+    localStorage.removeItem('cart');
     localStorage.setItem('token', result.token);
     localStorage.setItem('usuario', JSON.stringify(result.usuario));
     localStorage.removeItem('lastOrder');
     setCurrentUser(result.usuario);
     setLastOrder(null);
+    setCart([]);
+    setCartError('');
     await refreshData(result.usuario);
     return result.usuario;
   };
@@ -357,8 +407,11 @@ export function AppProvider({ children }) {
     localStorage.removeItem('token');
     localStorage.removeItem('usuario');
     localStorage.removeItem('lastOrder');
+    localStorage.removeItem('cart');
     setCurrentUser(null);
     setLastOrder(null);
+    setCart([]);
+    setCartError('');
   };
 
   const toggleDeliveryMode = async () => {
@@ -398,6 +451,14 @@ export function AppProvider({ children }) {
   const checkout = async ({ tipo_pedido = 'delivery', id_metodo_pago, estado_pago, ...ubicacionEntrega }) => {
     if (!cart.length) return null;
     if (!currentUser) throw new Error('Inicia sesion para crear pedidos');
+    const restaurant = restaurants.find((entry) => entry.id_tienda === cart[0].restaurantId);
+    if (!restaurant?.available) {
+      throw new Error('La tienda no esta disponible en este momento.');
+    }
+    const unavailableItem = cart.find((item) => item.quantity > Number(item.stock || 0));
+    if (unavailableItem) {
+      throw new Error(`Solo hay ${unavailableItem.stock} unidades disponibles de ${unavailableItem.name}.`);
+    }
     const user = currentUser;
     const order = await api.post('/api/v1/pedidos', {
       id_usuario: user.id_usuario,
@@ -417,6 +478,8 @@ export function AppProvider({ children }) {
     refreshed.pago = payment;
     saveLastOrder(refreshed);
     setCart([]);
+    setCartError('');
+    await refreshData(user);
     return refreshed;
   };
 
@@ -444,6 +507,7 @@ export function AppProvider({ children }) {
       cartCount,
       loading,
       apiError,
+      cartError,
       currentUser,
       storeMemberships,
       isPlatformAdmin,
@@ -462,10 +526,12 @@ export function AppProvider({ children }) {
       deleteStore,
       createCategory,
       updateStore,
+      toggleStoreAvailability,
       addStoreStaff,
       createPlatformAdmin,
       removeStoreStaff,
       setCart,
+      setCartError,
       login,
       register,
       logout,
@@ -480,7 +546,7 @@ export function AppProvider({ children }) {
       refreshCurrentUser,
       setLastOrder
     }),
-    [restaurants, categories, cart, total, subtotal, totalDiscount, cartCount, loading, apiError, currentUser, lastOrder]
+    [restaurants, categories, cart, total, subtotal, totalDiscount, cartCount, loading, apiError, cartError, currentUser, lastOrder]
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

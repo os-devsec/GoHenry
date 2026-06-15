@@ -28,8 +28,8 @@ export default function PlatformAdminPage() {
       setStoreForm({ nombre: '', sucursal: 'Campus UIDE', nombre_lugar: 'Campus UIDE', referencia: '', horario_apertura: '08:00', horario_cierre: '18:00', logoFile: null });
       form.reset();
       setMessage('Tienda creada correctamente.');
-    } catch (apiError) {
-      setError(apiError.message);
+    } catch (_error) {
+      setError('No se pudo crear la tienda. Revisa los datos e intenta nuevamente.');
     }
   };
 
@@ -40,8 +40,8 @@ export default function PlatformAdminPage() {
       await createPlatformAdmin(adminForm);
       setAdminForm({ nombre: '', apellido: '', correo: '', telefono: '', password: '' });
       setMessage('Admin de plataforma guardado correctamente.');
-    } catch (apiError) {
-      setError(apiError.message);
+    } catch (_error) {
+      setError('No se pudo guardar el administrador. Revisa los datos e intenta nuevamente.');
     }
   };
 
@@ -57,8 +57,8 @@ export default function PlatformAdminPage() {
       setDeletingStoreId(restaurant.id_tienda);
       await deleteStore(restaurant.id_tienda);
       setMessage(`Tienda "${restaurant.name}" eliminada correctamente.`);
-    } catch (apiError) {
-      setError(apiError.message);
+    } catch (_error) {
+      setError('No se pudo eliminar la tienda. Intenta nuevamente.');
     } finally {
       setDeletingStoreId(null);
     }

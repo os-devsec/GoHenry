@@ -37,6 +37,10 @@ class TiendaRequest(BaseModel):
         return self
 
 
+class StoreAvailabilityRequest(BaseModel):
+    estado: bool
+
+
 class PersonalRequest(BaseModel):
     cargo: str = "empleado"
     id_usuario: int | None = None

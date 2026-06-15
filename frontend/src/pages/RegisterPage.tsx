@@ -34,8 +34,8 @@ export default function RegisterPage() {
         acepta_repartos: false
       });
       navigate('/');
-    } catch (apiError) {
-      setError(apiError.message);
+    } catch (_error) {
+      setError('No se pudo crear la cuenta. Revisa los datos e intenta nuevamente.');
     }
   };
 
