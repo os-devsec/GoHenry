@@ -1,6 +1,5 @@
 import React from 'react';
-import { Route, Routes } from 'react-router-dom';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Shell from './components/layout/Shell.tsx';
 import CheckoutPage from './pages/CheckoutPage.tsx';
 import DeliveryPage from './pages/DeliveryPage.tsx';
@@ -35,6 +34,7 @@ export default function App() {
         <Route path="/delivery" element={<ProtectedRoute allow={canUseDelivery} loading={loading}><DeliveryPage /></ProtectedRoute>} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>
   );
