@@ -61,6 +61,7 @@ def get_store_with_location(session: Session, id_tienda: int) -> dict[str, Any] 
 def update_store(session: Session, store: Tienda, payload: TiendaRequest) -> dict[str, Any]:
     store.nombre = payload.nombre.strip()
     store.sucursal = payload.sucursal
+    store.logo_url = payload.logo_url
     store.horario_apertura = payload.horario_apertura
     store.horario_cierre = payload.horario_cierre
 
@@ -96,14 +97,6 @@ def update_store_availability(session: Session, store: Tienda, estado: bool) -> 
     return get_store_with_location(session, store.id_tienda or 0) or store.model_dump()
 
 
-def update_logo(session: Session, store: Tienda, logo_url: str) -> dict[str, Any]:
-    store.logo_url = logo_url
-    session.add(store)
-    session.commit()
-    session.refresh(store)
-    return store.model_dump()
-
-
 def delete_store(session: Session, id_tienda: int) -> dict[str, Any] | None:
     connection = session.connection()
     store = connection.execute(
@@ -119,16 +112,6 @@ def delete_store(session: Session, id_tienda: int) -> dict[str, Any] | None:
     if not store:
         return None
 
-    product_rows = connection.execute(
-        text(
-            """
-            SELECT id_producto, imagen_url
-            FROM producto
-            WHERE id_tienda = :id_tienda
-            """
-        ),
-        {"id_tienda": id_tienda},
-    ).mappings().all()
     delivery_location_ids = [
         row[0]
         for row in connection.execute(
@@ -230,8 +213,6 @@ def delete_store(session: Session, id_tienda: int) -> dict[str, Any] | None:
 
     return {
         "id_tienda": id_tienda,
-        "logo_url": store["logo_url"],
-        "products": [dict(product) for product in product_rows],
     }
 
 

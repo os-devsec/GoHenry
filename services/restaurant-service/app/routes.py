@@ -1,8 +1,6 @@
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from .database import get_session
@@ -60,18 +58,6 @@ def delete_store(
     session: Session = Depends(get_session),
 ) -> dict[str, bool]:
     return services.delete_store(session, id_tienda, user)
-
-
-@router.post("/api/v1/tiendas/{id_tienda}/logo")
-async def upload_store_logo(
-    id_tienda: int,
-    logo: UploadFile = File(...),
-    user: dict[str, Any] = Depends(current_user),
-    session: Session = Depends(get_session),
-) -> dict[str, Any]:
-    extension = Path(logo.filename or "").suffix.lower() or ".png"
-    file_name = f"tienda-{id_tienda}-{int(datetime.now(timezone.utc).timestamp())}{extension}"
-    return await services.upload_store_logo(session, id_tienda, logo, user, file_name)
 
 
 @router.get("/api/v1/tiendas/{id_tienda}/personal")

@@ -19,8 +19,7 @@ export default function HomePage() {
             || product.name.toLowerCase().includes(query)
             || product.description?.toLowerCase().includes(query);
           const matchesCategory = !categoryId || product.categoryIds.includes(Number(categoryId));
-          const hasActiveFilter = Boolean(query || categoryId);
-          return matchesSearch && matchesCategory && (hasActiveFilter || !product.isOnlyExtra);
+          return matchesSearch && matchesCategory && !product.isOnlyExtra;
         })
         .map((product) => ({ restaurant, product }))
     );

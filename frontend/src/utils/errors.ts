@@ -1,11 +1,12 @@
 export function customerErrorMessage(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : '';
+  const normalized = message.toLowerCase();
   if (
-    message.includes('stock')
-    || message.includes('unidades disponibles')
-    || message.includes('tienda esta cerrada')
-    || message.includes('fuera de su horario')
-    || message.includes('tienda no esta disponible')
+    normalized.includes('stock')
+    || normalized.includes('unidades disponibles')
+    || normalized.includes('tienda esta cerrada')
+    || normalized.includes('fuera de su horario')
+    || normalized.includes('tienda no esta disponible')
   ) {
     return message;
   }

@@ -42,4 +42,10 @@ En produccion, la imagen del API Gateway compila y sirve tambien el frontend.
 La aplicacion y la API quedan disponibles desde el mismo host del balanceador,
 sin ejecutar Vite como proceso separado.
 
+Instancia actual: `http://100.30.192.129:8000`
+
+Las imagenes de tiendas y productos se guardan como enlaces `http/https` en la
+base de datos. El despliegue no requiere EFS ni volumenes compartidos para
+archivos.
+
 La documentacion tecnica completa se encuentra en [`docs/DOCUMENTACION_SERVICIOS.md`](docs/DOCUMENTACION_SERVICIOS.md).

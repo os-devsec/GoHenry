@@ -12,7 +12,7 @@ export default function PlatformAdminPage() {
     referencia: '',
     horario_apertura: '08:00',
     horario_cierre: '18:00',
-    logoFile: null
+    logo_url: ''
   });
   const [adminForm, setAdminForm] = useState({ nombre: '', apellido: '', correo: '', telefono: '', password: '' });
   const [message, setMessage] = useState('');
@@ -25,7 +25,7 @@ export default function PlatformAdminPage() {
     try {
       setError('');
       await createStore(storeForm);
-      setStoreForm({ nombre: '', sucursal: 'Campus UIDE', nombre_lugar: 'Campus UIDE', referencia: '', horario_apertura: '08:00', horario_cierre: '18:00', logoFile: null });
+      setStoreForm({ nombre: '', sucursal: 'Campus UIDE', nombre_lugar: 'Campus UIDE', referencia: '', horario_apertura: '08:00', horario_cierre: '18:00', logo_url: '' });
       form.reset();
       setMessage('Tienda creada correctamente.');
     } catch (_error) {
@@ -100,8 +100,8 @@ export default function PlatformAdminPage() {
             <Field label="Horario de cierre">
               <input className="field" type="time" value={storeForm.horario_cierre} onChange={(event) => setStoreForm({ ...storeForm, horario_cierre: event.target.value })} />
             </Field>
-            <Field label="Logo de tienda" wide>
-              <input className="field" type="file" accept="image/*" onChange={(event) => setStoreForm({ ...storeForm, logoFile: event.target.files?.[0] || null })} />
+            <Field label="Enlace del logo" wide>
+              <input className="field" type="url" placeholder="https://ejemplo.com/logo.jpg" value={storeForm.logo_url} onChange={(event) => setStoreForm({ ...storeForm, logo_url: event.target.value })} />
             </Field>
             <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-full bg-wine-600 px-5 py-3 font-black text-white md:col-span-2">
               <Plus size={18} /> Crear tienda
@@ -145,7 +145,7 @@ export default function PlatformAdminPage() {
                   <h3 className="truncate font-black text-stone-900">{restaurant.name}</h3>
                   <p className="text-sm text-stone-500">{restaurant.category}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Link to="/restaurant-admin" className="inline-flex rounded-full bg-maize-300 px-4 py-2 text-sm font-black text-wine-900">Administrar</Link>
+                    <Link to={`/restaurant-admin?tienda=${restaurant.id_tienda}`} className="inline-flex rounded-full bg-maize-300 px-4 py-2 text-sm font-black text-wine-900">Administrar</Link>
                     <button
                       type="button"
                       onClick={() => removeStore(restaurant)}

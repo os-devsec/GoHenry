@@ -15,7 +15,6 @@ RUN apk add --no-cache ca-certificates \
 
 WORKDIR /app
 COPY --from=builder /bin/catalog-service /app/catalog-service
-RUN mkdir -p /app/uploads/products
 
 ENV PORT=8000
 EXPOSE 8000

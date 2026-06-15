@@ -15,7 +15,7 @@ async function request(path: string, options: RequestInit = {}) {
     response = await fetch(`${API_URL}${path}`, { ...options, headers });
   } catch (error) {
     const connectionError = new Error(
-      'No pudimos cargar las tiendas en este momento. Intenta nuevamente en unos segundos.'
+      'No pudimos conectarnos en este momento. Intenta nuevamente en unos segundos.'
     ) as Error & { cause?: unknown };
     connectionError.cause = error;
     throw connectionError;
@@ -36,20 +36,13 @@ export const api = {
   get: (path: string) => request(path),
   post: (path: string, body: unknown) => request(path, { method: 'POST', body: JSON.stringify(body) }),
   patch: (path: string, body: unknown) => request(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: (path: string) => request(path, { method: 'DELETE' }),
-  upload: (path: string, formData: FormData) => request(path, { method: 'POST', body: formData })
+  delete: (path: string) => request(path, { method: 'DELETE' })
 };
 
 export function productImageUrl(imagenUrl?: string) {
-  if (!imagenUrl) return '';
-  if (imagenUrl.startsWith('http')) return imagenUrl;
-  const fileName = imagenUrl.split('/').pop();
-  return `${API_URL}/api/v1/productos/imagenes/${fileName}`;
+  return imagenUrl?.startsWith('http') ? imagenUrl : '';
 }
 
 export function storeLogoUrl(logoUrl?: string) {
-  if (!logoUrl) return '';
-  if (logoUrl.startsWith('http')) return logoUrl;
-  const fileName = logoUrl.split('/').pop();
-  return `${API_URL}/api/v1/tiendas/logos/${fileName}`;
+  return logoUrl?.startsWith('http') ? logoUrl : '';
 }

@@ -1,4 +1,5 @@
 from datetime import time
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
@@ -27,6 +28,17 @@ class TiendaRequest(BaseModel):
             return time.fromisoformat(value).strftime("%H:%M")
         except ValueError as error:
             raise ValueError("El horario debe usar el formato HH:mm") from error
+
+    @field_validator("logo_url")
+    @classmethod
+    def valid_logo_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip()
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("El enlace del logo debe comenzar con http:// o https://")
+        return normalized
 
     @model_validator(mode="after")
     def closing_after_opening(self) -> "TiendaRequest":

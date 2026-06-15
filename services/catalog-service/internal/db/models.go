@@ -34,6 +34,7 @@ type CreateProductParams struct {
 	DescuentoPorcentaje float64
 	DescuentoInicio     any
 	DescuentoFin        any
+	ImagenURL           any
 	Estado              int
 }
 
@@ -45,6 +46,8 @@ type UpdateProductParams struct {
 	DescuentoPorcentaje float64
 	DescuentoInicio     any
 	DescuentoFin        any
+	ImagenURL           any
+	Estado              int
 	IDProducto          any
 }
 
@@ -58,9 +61,4 @@ type UpdateProductDiscountParams struct {
 	DescuentoInicio     any
 	DescuentoFin        any
 	IDProducto          any
-}
-
-type UpdateProductImageParams struct {
-	ImagenURL  string
-	IDProducto any
 }

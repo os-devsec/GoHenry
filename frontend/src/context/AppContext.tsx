@@ -15,27 +15,35 @@ function storedJson(key, fallback) {
 }
 
 async function optionalProducts(stores = [], user = null) {
-  const load = async () => {
-    const publicProducts = await api.get('/api/v1/productos').catch(() => []);
-    const memberships = user?.tiendas || [];
-    const storeIds = user?.rol_usuario === 'admin_plataforma'
-      ? stores.map((store) => store.id_tienda)
-      : memberships.map((membership) => membership.id_tienda);
+  const publicProducts = await api.get('/api/v1/productos');
+  const memberships = user?.tiendas || [];
+  const storeIds = user?.rol_usuario === 'admin_plataforma'
+    ? stores.map((store) => store.id_tienda)
+    : memberships.map((membership) => membership.id_tienda);
 
-    if (!storeIds.length) return publicProducts;
+  if (!storeIds.length) return publicProducts;
 
-    const storeProducts = await Promise.all(
-      storeIds.map((id) => api.get(`/api/v1/tiendas/${id}/productos`).catch(() => []))
-    );
-    const byId = new Map(publicProducts.map((product) => [product.id_producto, product]));
-    storeProducts.flat().forEach((product) => byId.set(product.id_producto, product));
-    return Array.from(byId.values());
-  };
+  const storeProductResults = await Promise.allSettled(
+    storeIds.map((id) => api.get(`/api/v1/tiendas/${id}/productos`))
+  );
+  const byId = new Map(publicProducts.map((product) => [product.id_producto, product]));
+  storeProductResults.forEach((result) => {
+    if (result.status === 'fulfilled') {
+      result.value.forEach((product) => byId.set(product.id_producto, product));
+    }
+  });
+  return Array.from(byId.values());
+}
 
-  return Promise.race([
-    load(),
-    new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 1200))
-  ]);
+function storedCartForUser(user) {
+  if (!user?.id_usuario) return [];
+  const ownerId = localStorage.getItem('cartOwnerId');
+  if (ownerId !== String(user.id_usuario)) {
+    localStorage.removeItem('cart');
+    localStorage.removeItem('cartOwnerId');
+    return [];
+  }
+  return storedJson('cart', []);
 }
 
 export function useApp() {
@@ -43,10 +51,11 @@ export function useApp() {
 }
 
 export function AppProvider({ children }) {
+  const storedUser = storedJson('usuario', null);
   const [restaurants, setRestaurants] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
-  const [cart, setCart] = useState<any[]>(() => storedJson('cart', []));
-  const [currentUser, setCurrentUser] = useState(() => storedJson('usuario', null));
+  const [cart, setCart] = useState<any[]>(() => storedCartForUser(storedUser));
+  const [currentUser, setCurrentUser] = useState(storedUser);
   const [lastOrder, setLastOrder] = useState(() => storedJson('lastOrder', null));
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
@@ -57,6 +66,11 @@ export function AppProvider({ children }) {
     if (!token) return null;
     try {
       const user = await api.get('/api/v1/auth/me');
+      if (localStorage.getItem('cartOwnerId') !== String(user.id_usuario)) {
+        localStorage.removeItem('cart');
+        localStorage.setItem('cartOwnerId', String(user.id_usuario));
+        setCart([]);
+      }
       localStorage.setItem('usuario', JSON.stringify(user));
       setCurrentUser(user);
       return user;
@@ -64,6 +78,8 @@ export function AppProvider({ children }) {
       localStorage.removeItem('token');
       localStorage.removeItem('usuario');
       setCurrentUser(null);
+      setCart([]);
+      setCartError('');
       return null;
     }
   };
@@ -101,6 +117,7 @@ export function AppProvider({ children }) {
             discountActive,
             discountStart: product.descuento_inicio || '',
             discountEnd: product.descuento_fin || '',
+            enabled: Boolean(product.estado),
             available: Boolean(product.estado) && Number(product.stock || 0) > 0 && storeAvailable,
             categories: Array.isArray(product.categorias) ? product.categorias : [],
             categoryIds: Array.isArray(product.categorias)
@@ -111,6 +128,7 @@ export function AppProvider({ children }) {
             isOnlyExtra: Array.isArray(product.categorias)
               && product.categorias.length > 0
               && product.categorias.every((category) => category.nombre?.toLowerCase() === 'extra'),
+            imageUrl: product.imagen_url || '',
             image: productImageUrl(product.imagen_url) || foodImage
           };
           });
@@ -129,6 +147,7 @@ export function AppProvider({ children }) {
           available: storeAvailable,
           closedBySchedule: Boolean(store.cerrada_por_horario),
           locationText: [store.nombre_lugar, store.referencia].filter(Boolean).join(' '),
+          logoUrl: store.logo_url || '',
           image: storeLogo,
           logo: storeLogo,
           tags: [store.nombre_lugar || 'Campus', store.horario_apertura || '08:00'],
@@ -150,8 +169,7 @@ export function AppProvider({ children }) {
         };
       }).filter(Boolean));
     } catch (_error) {
-      setApiError('No pudimos cargar las tiendas en este momento. Intenta nuevamente.');
-      setRestaurants([]);
+      setApiError('No pudimos cargar el menu en este momento. Intenta nuevamente.');
     } finally {
       setLoading(false);
     }
@@ -205,12 +223,27 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     const interval = window.setInterval(() => refreshData(currentUser), 60_000);
-    return () => window.clearInterval(interval);
+    const refreshVisibleData = () => {
+      if (document.visibilityState === 'visible') refreshData(currentUser);
+    };
+    window.addEventListener('focus', refreshVisibleData);
+    document.addEventListener('visibilitychange', refreshVisibleData);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshVisibleData);
+      document.removeEventListener('visibilitychange', refreshVisibleData);
+    };
   }, [currentUser]);
 
   useEffect(() => {
+    if (!currentUser?.id_usuario) {
+      localStorage.removeItem('cart');
+      localStorage.removeItem('cartOwnerId');
+      return;
+    }
+    localStorage.setItem('cartOwnerId', String(currentUser.id_usuario));
     localStorage.setItem('cart', JSON.stringify(cart));
-  }, [cart]);
+  }, [cart, currentUser?.id_usuario]);
 
   const addToCart = (restaurant, item) => {
     if (!restaurant.available) {
@@ -276,14 +309,11 @@ export function AppProvider({ children }) {
       descuento_inicio: Number(item.discount || 0) > 0 ? item.discountStart : '',
       descuento_fin: Number(item.discount || 0) > 0 ? item.discountEnd : '',
       id_categorias: item.categoryIds || [],
+      imagen_url: item.imageUrl || '',
       estado: true
     });
-    if (item.imageFile) {
-      const formData = new FormData();
-      formData.append('imagen', item.imageFile);
-      await api.upload(`/api/v1/productos/${product.id_producto || product.id}/imagen`, formData);
-    }
     await refreshData();
+    return product;
   };
 
   const updateMenuItem = async (restaurantId, itemId, item) => {
@@ -298,19 +328,14 @@ export function AppProvider({ children }) {
       descuento_inicio: Number(item.discount || 0) > 0 ? item.discountStart : '',
       descuento_fin: Number(item.discount || 0) > 0 ? item.discountEnd : '',
       id_categorias: item.categoryIds || [],
-      estado: item.available
+      imagen_url: item.imageUrl || '',
+      estado: item.enabled
     });
     await refreshData();
   };
 
   const createStore = async (payload) => {
-    const { logoFile, ...storePayload } = payload;
-    const store = await api.post('/api/v1/tiendas', storePayload);
-    if (logoFile) {
-      const formData = new FormData();
-      formData.append('logo', logoFile);
-      await api.upload(`/api/v1/tiendas/${store.id_tienda}/logo`, formData);
-    }
+    const store = await api.post('/api/v1/tiendas', payload);
     await refreshData();
     return store;
   };
@@ -328,13 +353,7 @@ export function AppProvider({ children }) {
   };
 
   const updateStore = async (storeId, payload) => {
-    const { logoFile, ...storePayload } = payload;
-    const store = await api.patch(`/api/v1/tiendas/${storeId}`, storePayload);
-    if (logoFile) {
-      const formData = new FormData();
-      formData.append('logo', logoFile);
-      await api.upload(`/api/v1/tiendas/${storeId}/logo`, formData);
-    }
+    const store = await api.patch(`/api/v1/tiendas/${storeId}`, payload);
     await refreshData();
     return store;
   };
@@ -344,8 +363,17 @@ export function AppProvider({ children }) {
     const store = await api.patch(`/api/v1/tiendas/${storeId}/disponibilidad`, {
       estado: !restaurant?.manuallyOpen
     });
-    await refreshData();
-    await refreshCurrentUser();
+    setRestaurants((current) => current.map((entry) => (
+      entry.id_tienda === storeId
+        ? {
+            ...entry,
+            manuallyOpen: Boolean(store.estado),
+            available: Boolean(store.disponible),
+            closedBySchedule: Boolean(store.cerrada_por_horario)
+          }
+        : entry
+    )));
+    await refreshData(currentUser);
     return store;
   };
 
@@ -371,13 +399,14 @@ export function AppProvider({ children }) {
   const toggleAvailability = async (restaurantId, itemId) => {
     const restaurant = restaurants.find((entry) => entry.id === String(restaurantId) || entry.id_tienda === restaurantId);
     const product = restaurant?.menu.find((item) => item.id === itemId);
-    await api.patch(`/api/v1/productos/${itemId}/disponibilidad`, { estado: !product?.available });
+    await api.patch(`/api/v1/productos/${itemId}/disponibilidad`, { estado: !product?.enabled });
     await refreshData();
   };
 
   const login = async (correo, password) => {
     const result = await api.post('/api/v1/auth/login', { correo, password });
     localStorage.removeItem('cart');
+    localStorage.setItem('cartOwnerId', String(result.usuario.id_usuario));
     localStorage.setItem('token', result.token);
     localStorage.setItem('usuario', JSON.stringify(result.usuario));
     localStorage.removeItem('lastOrder');
@@ -392,6 +421,7 @@ export function AppProvider({ children }) {
   const register = async (payload) => {
     const result = await api.post('/api/v1/auth/register', payload);
     localStorage.removeItem('cart');
+    localStorage.setItem('cartOwnerId', String(result.usuario.id_usuario));
     localStorage.setItem('token', result.token);
     localStorage.setItem('usuario', JSON.stringify(result.usuario));
     localStorage.removeItem('lastOrder');
@@ -408,6 +438,7 @@ export function AppProvider({ children }) {
     localStorage.removeItem('usuario');
     localStorage.removeItem('lastOrder');
     localStorage.removeItem('cart');
+    localStorage.removeItem('cartOwnerId');
     setCurrentUser(null);
     setLastOrder(null);
     setCart([]);

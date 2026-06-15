@@ -218,7 +218,7 @@ services/restaurant-service/app/main.py
 
 USP / responsabilidad diferencial:
 
-Administra tiendas, logos de tienda y personal asignado.
+Administra tiendas, enlaces de logo y personal asignado.
 
 Endpoints principales:
 
@@ -227,7 +227,6 @@ Endpoints principales:
 | `GET` | `/api/v1/tiendas` | Lista tiendas con disponibilidad manual y por horario |
 | `POST` | `/api/v1/tiendas` | Crea tienda, solo admin plataforma |
 | `PATCH` | `/api/v1/tiendas/{id}/disponibilidad` | Abre o cierra manualmente una tienda |
-| `POST` | `/api/v1/tiendas/{id}/logo` | Sube logo y guarda `logo_url` |
 | `GET` | `/api/v1/tiendas/{id}/personal` | Lista personal de tienda |
 | `POST` | `/api/v1/tiendas/{id}/personal` | Agrega personal |
 | `DELETE` | `/api/v1/tiendas/{id}/personal/{id_tienda_usuario}` | Desactiva personal |
@@ -270,7 +269,6 @@ Endpoints principales:
 | `DELETE` | `/api/v1/productos/{id}` | Desactiva producto |
 | `PATCH` | `/api/v1/productos/{id}/disponibilidad` | Cambia activo/inactivo |
 | `PATCH` | `/api/v1/productos/{id}/descuento` | Actualiza descuento |
-| `POST` | `/api/v1/productos/{id}/imagen` | Sube imagen |
 | `GET` | `/api/v1/categorias` | Lista categorias |
 | `POST` | `/api/v1/categorias` | Crea categoria |
 | `GET` | `/api/v1/tiendas/{id}/productos` | Lista productos internos de tienda |
@@ -279,6 +277,7 @@ Los endpoints de creacion y actualizacion aceptan:
 
 ```json
 {
+  "imagen_url": "https://ejemplo.com/plato.jpg",
   "descuento_porcentaje": 20,
   "descuento_inicio": "14:00",
   "descuento_fin": "17:00"
@@ -306,7 +305,6 @@ Funciones principales:
 | `getProduct` | Obtiene un producto desde la vista de tienda |
 | `createProduct` | Inserta producto en tabla base |
 | `updateAvailability` | Cambia `estado` del producto |
-| `uploadProductImage` | Guarda imagen y actualiza ruta |
 | `normalizeDiscount` | Valida porcentaje y horario recurrente |
 | `discountActive` | Evalua la franja diaria en horario de Ecuador |
 
@@ -495,7 +493,7 @@ Logica relevante:
 | --- | --- |
 | `optionalProducts` | Carga catalogo publico y, si el usuario administra tiendas, mezcla productos internos activos/inactivos |
 | `refreshData` | Carga tiendas y productos |
-| `addMenuItem` | Crea producto con porcentaje y horario recurrente opcionales |
+| `addMenuItem` | Crea producto con imagen por URL, porcentaje y horario recurrente opcionales |
 | `toggleAvailability` | Pausa/reactiva producto |
 | `checkout` | Crea pedido y asignacion de repartidor |
 | `login` / `register` | Autenticacion y recarga de datos |
@@ -509,6 +507,10 @@ puede ofrecerse como adicional.
 En produccion, el Dockerfile del API Gateway construye React y sirve sus archivos
 estaticos, incluyendo el fallback de rutas SPA. El frontend usa el mismo origen
 para llamar a la API, por lo que funciona desde computadoras y celulares.
+La instancia actual se publica en `http://100.30.192.129:8000`.
+
+Las imagenes de tiendas y productos son enlaces `http/https` almacenados en SQL
+Server. No se usan cargas de archivos, EFS ni volumenes compartidos.
 
 ## Flujo de Pedido
 

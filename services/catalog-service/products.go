@@ -3,11 +3,9 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
-	"os"
-	"path/filepath"
+	"net/url"
 	"strings"
 	"time"
 
@@ -161,6 +159,11 @@ func createProduct(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"detail": discountError.Error()})
 		return
 	}
+	imageURL, imageError := normalizeImageURL(payload.ImagenURL)
+	if imageError != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"detail": imageError.Error()})
+		return
+	}
 	estado := true
 	if payload.Estado != nil {
 		estado = *payload.Estado
@@ -174,6 +177,7 @@ func createProduct(ctx *gin.Context) {
 		DescuentoPorcentaje: discount,
 		DescuentoInicio:     discountStart,
 		DescuentoFin:        discountEnd,
+		ImagenURL:           nullString(imageURL),
 		Estado:              boolInt(estado),
 	})
 	if err != nil {
@@ -213,6 +217,11 @@ func updateProduct(ctx *gin.Context) {
 		ctx.JSON(http.StatusForbidden, gin.H{"detail": "No tienes permisos para modificar este producto"})
 		return
 	}
+	currentProduct, err := queries.GetProduct(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"detail": "Producto no encontrado"})
+		return
+	}
 	discount, discountStart, discountEnd, discountError := normalizeDiscount(
 		payload.DescuentoPorcentaje,
 		payload.DescuentoInicio,
@@ -222,7 +231,16 @@ func updateProduct(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"detail": discountError.Error()})
 		return
 	}
-	err := queries.UpdateProduct(catalogdb.UpdateProductParams{
+	imageURL, imageError := normalizeImageURL(payload.ImagenURL)
+	if imageError != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"detail": imageError.Error()})
+		return
+	}
+	estado := strings.EqualFold(currentProduct.Estado, "TRUE")
+	if payload.Estado != nil {
+		estado = *payload.Estado
+	}
+	err = queries.UpdateProduct(catalogdb.UpdateProductParams{
 		Nombre:              payload.Nombre,
 		Descripcion:         payload.Descripcion,
 		Precio:              payload.Precio,
@@ -230,6 +248,8 @@ func updateProduct(ctx *gin.Context) {
 		DescuentoPorcentaje: discount,
 		DescuentoInicio:     discountStart,
 		DescuentoFin:        discountEnd,
+		ImagenURL:           nullString(imageURL),
+		Estado:              boolInt(estado),
 		IDProducto:          ctx.Param("id"),
 	})
 	if err != nil {
@@ -326,42 +346,19 @@ func updateDiscount(ctx *gin.Context) {
 	getProduct(ctx)
 }
 
-func uploadProductImage(ctx *gin.Context) {
-	storeID, ok := productStore(ctx.Param("id"))
-	if !ok {
-		ctx.JSON(http.StatusNotFound, gin.H{"detail": "Producto no encontrado"})
-		return
-	}
-	user, authenticated := currentUser(ctx)
-	if !authenticated || !hasStoreRole(storeID, user, []string{"administrador"}) {
-		ctx.JSON(http.StatusForbidden, gin.H{"detail": "No tienes permisos para modificar este producto"})
-		return
-	}
-	file, header, err := ctx.Request.FormFile("imagen")
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"detail": "Archivo imagen requerido"})
-		return
-	}
-	defer file.Close()
-	ext := filepath.Ext(header.Filename)
-	name := fmt.Sprintf("producto-%s-%d%s", ctx.Param("id"), time.Now().Unix(), ext)
-	relative := filepath.ToSlash(filepath.Join("uploads/products", name))
-	destination := filepath.Join(uploadDir(), name)
-	out, err := os.Create(destination)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
-		return
-	}
-	defer out.Close()
-	io.Copy(out, file)
-	if err := queries.UpdateProductImage(catalogdb.UpdateProductImageParams{ImagenURL: relative, IDProducto: ctx.Param("id")}); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
-		return
-	}
-	getProduct(ctx)
-}
-
 func productStore(productID any) (int, bool) {
 	storeID, err := queries.ProductStore(productID)
 	return storeID, err == nil
+}
+
+func normalizeImageURL(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsed, err := url.ParseRequestURI(trimmed)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("el enlace de imagen debe comenzar con http:// o https://")
+	}
+	return parsed.String(), nil
 }

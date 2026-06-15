@@ -91,9 +91,9 @@ func (q *Queries) CreateProduct(params CreateProductParams) (int64, error) {
 	var id int64
 	err := q.db.QueryRow(`
 		INSERT INTO producto
-		(id_tienda, nombre, descripcion, precio, stock, descuento_porcentaje, descuento_inicio, descuento_fin, estado)
+		(id_tienda, nombre, descripcion, precio, stock, descuento_porcentaje, descuento_inicio, descuento_fin, imagen_url, estado)
 		OUTPUT INSERTED.id_producto
-		VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9)`,
+		VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10)`,
 		params.IDTienda,
 		params.Nombre,
 		params.Descripcion,
@@ -102,6 +102,7 @@ func (q *Queries) CreateProduct(params CreateProductParams) (int64, error) {
 		params.DescuentoPorcentaje,
 		params.DescuentoInicio,
 		params.DescuentoFin,
+		params.ImagenURL,
 		params.Estado,
 	).Scan(&id)
 	if err != nil {
@@ -114,8 +115,8 @@ func (q *Queries) UpdateProduct(params UpdateProductParams) error {
 	_, err := q.db.Exec(`
 		UPDATE producto
 		SET nombre = @p1, descripcion = @p2, precio = @p3, stock = @p4, descuento_porcentaje = @p5,
-		    descuento_inicio = @p6, descuento_fin = @p7
-		WHERE id_producto = @p8`,
+		    descuento_inicio = @p6, descuento_fin = @p7, imagen_url = @p8, estado = @p9
+		WHERE id_producto = @p10`,
 		params.Nombre,
 		params.Descripcion,
 		params.Precio,
@@ -123,6 +124,8 @@ func (q *Queries) UpdateProduct(params UpdateProductParams) error {
 		params.DescuentoPorcentaje,
 		params.DescuentoInicio,
 		params.DescuentoFin,
+		params.ImagenURL,
+		params.Estado,
 		params.IDProducto,
 	)
 	return err
@@ -143,11 +146,6 @@ func (q *Queries) UpdateProductDiscount(params UpdateProductDiscountParams) erro
 		params.DescuentoFin,
 		params.IDProducto,
 	)
-	return err
-}
-
-func (q *Queries) UpdateProductImage(params UpdateProductImageParams) error {
-	_, err := q.db.Exec("UPDATE producto SET imagen_url = @p1 WHERE id_producto = @p2", params.ImagenURL, params.IDProducto)
 	return err
 }
 

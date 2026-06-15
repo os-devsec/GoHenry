@@ -10,6 +10,7 @@ type ProductRequest struct {
 	DescuentoPorcentaje float64 `json:"descuento_porcentaje"`
 	DescuentoInicio     string  `json:"descuento_inicio"`
 	DescuentoFin        string  `json:"descuento_fin"`
+	ImagenURL           string  `json:"imagen_url"`
 	Estado              *bool   `json:"estado"`
 }
 

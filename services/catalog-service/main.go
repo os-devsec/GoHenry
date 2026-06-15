@@ -29,7 +29,6 @@ func main() {
 
 	router := gin.Default()
 	router.Use(cors.Default())
-	router.Static("/api/v1/productos/imagenes", uploadDir())
 	router.GET("/health", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"status": "ok", "service": "catalog-service"})
 	})
@@ -51,7 +50,6 @@ func registerRoutes(api *gin.RouterGroup) {
 	api.DELETE("/productos/:id", deleteProduct)
 	api.PATCH("/productos/:id/disponibilidad", updateAvailability)
 	api.PATCH("/productos/:id/descuento", updateDiscount)
-	api.POST("/productos/:id/imagen", uploadProductImage)
 	api.GET("/categorias", listCategories)
 	api.POST("/categorias", createCategory)
 	api.GET("/tiendas/:id/productos", listProductsByStore)

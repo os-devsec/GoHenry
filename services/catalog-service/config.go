@@ -34,15 +34,6 @@ func requiredEnv(name string) string {
 	return value
 }
 
-func uploadDir() string {
-	dir := os.Getenv("UPLOAD_DIR")
-	if dir == "" {
-		dir = "uploads/products"
-	}
-	os.MkdirAll(dir, 0755)
-	return dir
-}
-
 func restaurantServiceURL() string {
 	url := os.Getenv("RESTAURANT_SERVICE_URL")
 	if url == "" {

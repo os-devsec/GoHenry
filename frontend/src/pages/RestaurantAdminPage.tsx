@@ -1,6 +1,7 @@
 import React from 'react';
 import { CalendarClock, ChevronDown, ChevronUp, History, Pencil, Percent, Save, Store, Tags, Trash2, UserPlus, Users, UtensilsCrossed, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.ts';
 import { foodImage } from '../assets.ts';
 import AdminMetric from '../components/admin/AdminMetric.tsx';
@@ -25,9 +26,10 @@ export default function RestaurantAdminPage() {
     updateMenuItem,
     updateStore
   } = useApp();
-  const [selectedStoreId, setSelectedStoreId] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedStoreId, setSelectedStoreId] = useState(searchParams.get('tienda') || '');
   const restaurant = managedRestaurants.find((entry) => String(entry.id_tienda) === selectedStoreId) || managedRestaurants[0];
-  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '20', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], imageFile: null });
+  const [form, setForm] = useState({ name: '', description: '', price: '', stock: '20', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], imageUrl: '' });
   const [newCategoryName, setNewCategoryName] = useState('');
   const [staffForm, setStaffForm] = useState({ nombre: '', apellido: '', correo: '', telefono: '', password: '', cargo: 'empleado' });
   const [staff, setStaff] = useState([]);
@@ -35,7 +37,7 @@ export default function RestaurantAdminPage() {
   const [showOrderHistory, setShowOrderHistory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', description: '', price: '', stock: '', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], available: true });
+  const [editForm, setEditForm] = useState({ name: '', description: '', price: '', stock: '', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], imageUrl: '', enabled: true });
   const [storeForm, setStoreForm] = useState(null);
   const [storeMessage, setStoreMessage] = useState('');
   const [storeError, setStoreError] = useState('');
@@ -55,7 +57,7 @@ export default function RestaurantAdminPage() {
       referencia: restaurant.referencia,
       horario_apertura: restaurant.horario_apertura,
       horario_cierre: restaurant.horario_cierre,
-      logoFile: null
+      logo_url: restaurant.logoUrl || ''
     });
   }, [
     restaurant?.id_tienda,
@@ -64,7 +66,8 @@ export default function RestaurantAdminPage() {
     restaurant?.nombre_lugar,
     restaurant?.referencia,
     restaurant?.horario_apertura,
-    restaurant?.horario_cierre
+    restaurant?.horario_cierre,
+    restaurant?.logoUrl
   ]);
 
   const loadOrders = async () => {
@@ -168,7 +171,8 @@ export default function RestaurantAdminPage() {
       discountStart: item.discountStart || '',
       discountEnd: item.discountEnd || '',
       categoryIds: item.categoryIds || [],
-      available: item.available
+      imageUrl: item.imageUrl || '',
+      enabled: item.enabled
     });
   };
 
@@ -191,9 +195,9 @@ export default function RestaurantAdminPage() {
       discountStart: form.discountStart,
       discountEnd: form.discountEnd,
       categoryIds: form.categoryIds,
-      imageFile: form.imageFile
+      imageUrl: form.imageUrl
     });
-    setForm({ name: '', description: '', price: '', stock: '20', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], imageFile: null });
+    setForm({ name: '', description: '', price: '', stock: '20', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], imageUrl: '' });
     setSaving(false);
   };
 
@@ -236,7 +240,10 @@ export default function RestaurantAdminPage() {
             <select
               className="field max-w-xs bg-white text-stone-900"
               value={restaurant.id_tienda}
-              onChange={(event) => setSelectedStoreId(event.target.value)}
+              onChange={(event) => {
+                setSelectedStoreId(event.target.value);
+                setSearchParams({ tienda: event.target.value });
+              }}
             >
               {managedRestaurants.map((entry) => (
                 <option key={entry.id_tienda} value={entry.id_tienda}>{entry.name}</option>
@@ -289,7 +296,7 @@ export default function RestaurantAdminPage() {
             <Field label="Referencia"><input className="field" value={storeForm.referencia} onChange={(event) => setStoreForm({ ...storeForm, referencia: event.target.value })} /></Field>
             <Field label="Apertura"><input className="field" type="time" value={storeForm.horario_apertura} onChange={(event) => setStoreForm({ ...storeForm, horario_apertura: event.target.value })} /></Field>
             <Field label="Cierre"><input className="field" type="time" value={storeForm.horario_cierre} onChange={(event) => setStoreForm({ ...storeForm, horario_cierre: event.target.value })} /></Field>
-            <Field label="Nuevo logo" wide><input className="field" type="file" accept="image/*" onChange={(event) => setStoreForm({ ...storeForm, logoFile: event.target.files?.[0] || null })} /></Field>
+            <Field label="Enlace del logo" wide><input className="field" type="url" placeholder="https://ejemplo.com/logo.jpg" value={storeForm.logo_url} onChange={(event) => setStoreForm({ ...storeForm, logo_url: event.target.value })} /></Field>
           </div>
           {storeMessage && <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm font-bold text-green-700">{storeMessage}</p>}
           {storeError && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{storeError}</p>}
@@ -299,7 +306,7 @@ export default function RestaurantAdminPage() {
       <section aria-labelledby="incoming-orders-title" className="space-y-3">
         <div>
           <h2 id="incoming-orders-title" className="text-2xl font-black text-wine-900">Pedidos entrantes</h2>
-          <p className="text-sm text-stone-500">Ejemplo de la entidad Pedido con DetallePedido, Cliente, Producto y Pago.</p>
+          <p className="text-sm text-stone-500">Revisa, acepta y prepara los pedidos de esta tienda.</p>
         </div>
         <ul className="grid gap-3 lg:grid-cols-2">
           {activeOrders.map((order) => (
@@ -402,8 +409,8 @@ export default function RestaurantAdminPage() {
                 </button>
               </div>
             </Field>
-            <Field label="Imagen del plato">
-              <input className="field" type="file" accept="image/*" onChange={(event) => setForm({ ...form, imageFile: event.target.files?.[0] || null })} />
+            <Field label="Enlace de la imagen">
+              <input className="field" type="url" placeholder="https://ejemplo.com/plato.jpg" value={form.imageUrl} onChange={(event) => setForm({ ...form, imageUrl: event.target.value })} />
             </Field>
             <button type="submit" disabled={saving} className="w-full rounded-full bg-wine-600 px-5 py-3 font-black text-white disabled:bg-stone-300">
               {saving ? 'Guardando...' : 'Agregar al menu'}
@@ -427,6 +434,7 @@ export default function RestaurantAdminPage() {
                     <Field label="Descuento (%)"><input className="field" type="number" min="0" max="100" value={editForm.discount} onChange={(event) => setEditForm({ ...editForm, discount: event.target.value })} /></Field>
                     <Field label="Inicio descuento"><input className="field" type="time" required={Number(editForm.discount) > 0} value={editForm.discountStart} onChange={(event) => setEditForm({ ...editForm, discountStart: event.target.value })} /></Field>
                     <Field label="Fin descuento"><input className="field" type="time" required={Number(editForm.discount) > 0} value={editForm.discountEnd} onChange={(event) => setEditForm({ ...editForm, discountEnd: event.target.value })} /></Field>
+                    <Field label="Enlace de la imagen" wide><input className="field" type="url" placeholder="https://ejemplo.com/plato.jpg" value={editForm.imageUrl} onChange={(event) => setEditForm({ ...editForm, imageUrl: event.target.value })} /></Field>
                     <Field label="Categorias" wide>
                       <CategorySelector
                         categories={categories}
@@ -459,8 +467,8 @@ export default function RestaurantAdminPage() {
                   </p>
                 </div>
                 {canManageProducts && <div className="flex gap-2">
-                  <button type="button" onClick={() => toggleAvailability(restaurant.id, item.id)} aria-pressed={item.available} className={`rounded-full px-4 py-2 text-sm font-black ${item.available ? 'bg-maize-300 text-wine-900' : 'bg-stone-200 text-stone-600'}`}>
-                    {item.available ? 'Disponible' : 'Pausado'}
+                  <button type="button" onClick={() => toggleAvailability(restaurant.id, item.id)} aria-pressed={item.enabled} className={`rounded-full px-4 py-2 text-sm font-black ${item.enabled ? 'bg-maize-300 text-wine-900' : 'bg-stone-200 text-stone-600'}`}>
+                    {item.enabled ? (Number(item.stock) > 0 ? 'Disponible' : 'Sin stock') : 'Pausado'}
                   </button>
                   <IconButton label={`Editar ${item.name}`} onClick={() => startEditingProduct(item)} icon={<Pencil size={16} />} />
                   <IconButton label={`Eliminar ${item.name}`} onClick={() => deleteMenuItem(restaurant.id, item.id)} icon={<Trash2 size={16} />} />

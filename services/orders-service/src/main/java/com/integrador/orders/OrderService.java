@@ -8,10 +8,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.TreeMap;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -126,15 +126,7 @@ public class OrderService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El pedido debe incluir al menos un plato");
         }
 
-        Map<Integer, Integer> requestedQuantities = new LinkedHashMap<>();
-        for (Map<String, Object> item : requestItems) {
-            int productId = Utils.intValue(Utils.first(item, "id_producto", "id"), 0);
-            int qty = Utils.intValue(Utils.first(item, "cantidad", "quantity"), 1);
-            if (productId <= 0 || qty <= 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La cantidad de cada producto debe ser mayor a cero");
-            }
-            requestedQuantities.put(productId, requestedQuantities.getOrDefault(productId, 0) + qty);
-        }
+        Map<Integer, Integer> requestedQuantities = normalizeRequestedQuantities(requestItems);
 
         double subtotal = 0;
         double totalDescuento = 0;
@@ -142,11 +134,15 @@ public class OrderService {
         for (Map.Entry<Integer, Integer> requested : requestedQuantities.entrySet()) {
             int productId = requested.getKey();
             int qty = requested.getValue();
-            Map<String, Object> product = jdbc.queryForMap(
+            List<Map<String, Object>> productRows = jdbc.queryForList(
                     "SELECT id_tienda, nombre, estado, stock, precio, descuento_porcentaje, descuento_inicio, descuento_fin " +
                             "FROM producto WITH (UPDLOCK, ROWLOCK) WHERE id_producto = ?",
                     productId
             );
+            if (productRows.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Uno de los productos ya no esta disponible");
+            }
+            Map<String, Object> product = productRows.get(0);
             if (Utils.intValue(product.get("id_tienda"), 0) != idTienda || Utils.intValue(product.get("estado"), 0) != 1) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Todos los productos deben estar activos y pertenecer a la tienda");
             }
@@ -472,6 +468,22 @@ public class OrderService {
                         "WHERE dp.id_pedido = ?",
                 idPedido
         );
+    }
+
+    static Map<Integer, Integer> normalizeRequestedQuantities(List<Map<String, Object>> requestItems) {
+        Map<Integer, Integer> quantities = new TreeMap<>();
+        for (Map<String, Object> item : requestItems) {
+            int productId = Utils.intValue(Utils.first(item, "id_producto", "id"), 0);
+            int qty = Utils.intValue(Utils.first(item, "cantidad", "quantity"), 1);
+            if (productId <= 0 || qty <= 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "La cantidad de cada producto debe ser mayor a cero"
+                );
+            }
+            quantities.put(productId, quantities.getOrDefault(productId, 0) + qty);
+        }
+        return quantities;
     }
 
     private boolean descuentoActivo(Map<String, Object> product) {
