@@ -32,7 +32,7 @@ export default function HomePage() {
   });
   const activeOffers = restaurants.flatMap((restaurant) =>
     restaurant.menu
-      .filter((product) => product.discountActive && !product.isOnlyExtra && product.available)
+      .filter((product) => product.discountActive && !product.isOnlyExtra)
       .map((product) => ({ restaurant, product }))
   );
 
@@ -77,7 +77,7 @@ export default function HomePage() {
             </span>
             <div>
               <h2 id="active-offers-title" className="text-2xl font-black text-wine-900">Ofertas activas</h2>
-              <p className="text-sm text-stone-600">Descuentos disponibles ahora en varios restaurantes.</p>
+              <p className="text-sm text-stone-600">Descuentos vigentes ahora. Si una tienda esta cerrada, podras pedir cuando vuelva a abrir.</p>
             </div>
           </div>
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

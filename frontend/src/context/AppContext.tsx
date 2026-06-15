@@ -46,6 +46,26 @@ function storedCartForUser(user) {
   return storedJson('cart', []);
 }
 
+export function storeIsWithinSchedule(openingValue, closingValue, now = new Date()) {
+  const opening = String(openingValue || '').match(/^(\d{2}):(\d{2})$/);
+  const closing = String(closingValue || '').match(/^(\d{2}):(\d{2})$/);
+  if (!opening || !closing) return false;
+
+  const timeParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Guayaquil',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(now);
+  const hour = Number(timeParts.find((part) => part.type === 'hour')?.value || 0);
+  const minute = Number(timeParts.find((part) => part.type === 'minute')?.value || 0);
+  const currentMinutes = hour * 60 + minute;
+  const openingMinutes = Number(opening[1]) * 60 + Number(opening[2]);
+  const closingMinutes = Number(closing[1]) * 60 + Number(closing[2]);
+
+  return openingMinutes <= currentMinutes && currentMinutes < closingMinutes;
+}
+
 export function useApp() {
   return useContext(AppContext);
 }
@@ -95,7 +115,14 @@ export function AppProvider({ children }) {
       setCategories(categoryData.filter((category) => category.estado));
       const mapped = stores.map((store) => {
         const storeLogo = storeLogoUrl(store.logo_url) || logoImage;
-        const storeAvailable = Boolean(store.disponible);
+        const manuallyOpen = Boolean(store.estado);
+        const withinSchedule = storeIsWithinSchedule(store.horario_apertura, store.horario_cierre);
+        const storeAvailable = typeof store.disponible === 'boolean'
+          ? store.disponible
+          : manuallyOpen && withinSchedule;
+        const closedBySchedule = typeof store.cerrada_por_horario === 'boolean'
+          ? store.cerrada_por_horario
+          : manuallyOpen && !withinSchedule;
         const menu = products
           .filter((product) => product.id_tienda === store.id_tienda)
           .map((product) => {
@@ -143,9 +170,9 @@ export function AppProvider({ children }) {
           referencia: store.referencia || '',
           horario_apertura: store.horario_apertura || '08:00',
           horario_cierre: store.horario_cierre || '18:00',
-          manuallyOpen: Boolean(store.estado),
+          manuallyOpen,
           available: storeAvailable,
-          closedBySchedule: Boolean(store.cerrada_por_horario),
+          closedBySchedule,
           locationText: [store.nombre_lugar, store.referencia].filter(Boolean).join(' '),
           logoUrl: store.logo_url || '',
           image: storeLogo,
