@@ -378,6 +378,18 @@ Funciones principales:
 | `items` | Devuelve detalle del pedido |
 | `asignacion` | Devuelve ultima asignacion de repartidor |
 
+Reglas de envio:
+
+| Ruta | Costo |
+| --- | ---: |
+| Misma zona o ubicaciones generales | `$0.50` |
+| Zona general hacia Deportes o Automotriz/Gastronomia | `$1.00` |
+| Deportes hacia Automotriz/Gastronomia, o viceversa | `$1.50` |
+
+El endpoint de cotizacion acepta tanto `id_ubicacion_entrega` como una ubicacion
+nueva mediante `nombre_lugar` y `referencia`. El backend es la unica fuente del
+calculo que se muestra en checkout y del valor finalmente guardado en el pedido.
+
 Estados iniciales:
 
 | ID | Estado |

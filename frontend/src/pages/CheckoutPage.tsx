@@ -6,7 +6,6 @@ import SummaryRow from '../components/common/SummaryRow.tsx';
 import { api } from '../api.ts';
 import { useApp } from '../context/AppContext.tsx';
 import { formatCurrency } from '../utils/format.ts';
-import { calculateDeliveryFee } from '../utils/delivery.ts';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
@@ -23,15 +22,12 @@ export default function CheckoutPage() {
   const [error, setError] = useState('');
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [quotingDelivery, setQuotingDelivery] = useState(false);
-  const origin = [cart[0]?.restaurantLocation, cart[0]?.restaurantReference].filter(Boolean).join(' ');
+  const [deliveryQuoteError, setDeliveryQuoteError] = useState('');
   const storeId = cart[0]?.restaurantId || cart[0]?.id_tienda || 0;
   const selectedLocation = locations.find((location) => String(location.id_ubicacion) === locationId);
   const destinationName = locationMode === 'existing'
     ? selectedLocation?.nombre_lugar || ''
     : placeName;
-  const destination = locationMode === 'existing'
-    ? [selectedLocation?.nombre_lugar, selectedLocation?.referencia].filter(Boolean).join(' ')
-    : [placeName, reference].filter(Boolean).join(' ');
   const totalWithDelivery = total + deliveryFee;
   const selectedPayment = paymentMethods.find((method) => String(method.id_metodo_pago) === paymentMethodId);
 
@@ -57,37 +53,45 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (orderType !== 'delivery' || !cart.length) {
       setDeliveryFee(0);
+      setDeliveryQuoteError('');
       return undefined;
     }
-    if (locationMode === 'new') {
-      setDeliveryFee(calculateDeliveryFee(origin, placeName));
-      return undefined;
-    }
-    if (!storeId || !locationId) {
+    if (!storeId || (locationMode === 'existing' && !locationId) || (locationMode === 'new' && !placeName.trim())) {
       setDeliveryFee(0);
+      setDeliveryQuoteError('');
       return undefined;
     }
 
     let active = true;
-    setQuotingDelivery(true);
-    api.post('/api/v1/pedidos/cotizar-envio', {
-      id_tienda: Number(storeId),
-      id_ubicacion_entrega: Number(locationId)
-    })
-      .then((quote) => {
-        if (active) setDeliveryFee(Number(quote.costo_envio || 0));
+    const timer = window.setTimeout(() => {
+      setQuotingDelivery(true);
+      setDeliveryQuoteError('');
+      const destinationPayload = locationMode === 'existing'
+        ? { id_ubicacion_entrega: Number(locationId) }
+        : { nombre_lugar: placeName.trim(), referencia: reference.trim() || null };
+      api.post('/api/v1/pedidos/cotizar-envio', {
+        id_tienda: Number(storeId),
+        ...destinationPayload
       })
-      .catch(() => {
-        if (active) setDeliveryFee(calculateDeliveryFee(origin, destination));
-      })
-      .finally(() => {
-        if (active) setQuotingDelivery(false);
-      });
+        .then((quote) => {
+          if (active) setDeliveryFee(Number(quote.costo_envio || 0));
+        })
+        .catch((quoteError) => {
+          if (active) {
+            setDeliveryFee(0);
+            setDeliveryQuoteError(quoteError.message);
+          }
+        })
+        .finally(() => {
+          if (active) setQuotingDelivery(false);
+        });
+    }, 250);
 
     return () => {
       active = false;
+      window.clearTimeout(timer);
     };
-  }, [orderType, locationMode, locationId, storeId, origin, placeName, reference, destination, cart.length]);
+  }, [orderType, locationMode, locationId, storeId, placeName, reference, cart.length]);
 
   const confirmOrder = async () => {
     if (!cart.length) return;
@@ -215,6 +219,11 @@ export default function CheckoutPage() {
               <span className="font-black text-stone-800">Ruta calculada:</span>{' '}
               {cart[0]?.restaurantLocation || 'Tienda'} a {destinationName}. Envio:{' '}
               <span className="font-black text-wine-700">{quotingDelivery ? 'Calculando...' : formatCurrency(deliveryFee)}</span>
+            </p>
+          )}
+          {deliveryQuoteError && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+              No se pudo cotizar el envio: {deliveryQuoteError}
             </p>
           )}
           </>

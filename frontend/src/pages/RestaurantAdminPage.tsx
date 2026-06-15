@@ -36,6 +36,8 @@ export default function RestaurantAdminPage() {
   const [editingProductId, setEditingProductId] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', description: '', price: '', stock: '', discount: '0', discountStart: '', discountEnd: '', categoryIds: [], available: true });
   const [storeForm, setStoreForm] = useState(null);
+  const [storeMessage, setStoreMessage] = useState('');
+  const [storeError, setStoreError] = useState('');
   const currentMembership = storeMemberships.find((membership) => membership.id_tienda === restaurant?.id_tienda);
   const canManageProducts = isPlatformAdmin || currentMembership?.cargo === 'administrador';
   const canManageStaff = canManageProducts;
@@ -54,7 +56,15 @@ export default function RestaurantAdminPage() {
       horario_cierre: restaurant.horario_cierre,
       logoFile: null
     });
-  }, [restaurant?.id_tienda]);
+  }, [
+    restaurant?.id_tienda,
+    restaurant?.name,
+    restaurant?.sucursal,
+    restaurant?.nombre_lugar,
+    restaurant?.referencia,
+    restaurant?.horario_apertura,
+    restaurant?.horario_cierre
+  ]);
 
   const loadOrders = async () => {
     if (!restaurant) return;
@@ -119,9 +129,17 @@ export default function RestaurantAdminPage() {
   const submitStore = async (event) => {
     event.preventDefault();
     if (!storeForm) return;
-    setSaving(true);
-    await updateStore(restaurant.id_tienda, storeForm);
-    setSaving(false);
+    try {
+      setSaving(true);
+      setStoreError('');
+      setStoreMessage('');
+      await updateStore(restaurant.id_tienda, storeForm);
+      setStoreMessage('Informacion y horario actualizados correctamente.');
+    } catch (apiError) {
+      setStoreError(apiError.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const startEditingProduct = (item) => {
@@ -216,7 +234,11 @@ export default function RestaurantAdminPage() {
 
       <section className="grid gap-4 md:grid-cols-3">
         <AdminMetric icon={<Store size={20} />} label="Estado" value="Abierto" />
-        <AdminMetric icon={<CalendarClock size={20} />} label="Horario" value="09:00 - 22:00" />
+        <AdminMetric
+          icon={<CalendarClock size={20} />}
+          label="Horario"
+          value={`${restaurant.horario_apertura} - ${restaurant.horario_cierre}`}
+        />
         <AdminMetric icon={<UtensilsCrossed size={20} />} label="Platos" value={restaurant.menu.length} />
       </section>
 
@@ -240,6 +262,8 @@ export default function RestaurantAdminPage() {
             <Field label="Cierre"><input className="field" type="time" value={storeForm.horario_cierre} onChange={(event) => setStoreForm({ ...storeForm, horario_cierre: event.target.value })} /></Field>
             <Field label="Nuevo logo" wide><input className="field" type="file" accept="image/*" onChange={(event) => setStoreForm({ ...storeForm, logoFile: event.target.files?.[0] || null })} /></Field>
           </div>
+          {storeMessage && <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm font-bold text-green-700">{storeMessage}</p>}
+          {storeError && <p role="alert" className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{storeError}</p>}
         </form>
       )}
 

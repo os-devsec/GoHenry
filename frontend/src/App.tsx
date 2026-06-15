@@ -1,6 +1,6 @@
 import React from 'react';
 import { Route, Routes } from 'react-router-dom';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import Shell from './components/layout/Shell.tsx';
 import CheckoutPage from './pages/CheckoutPage.tsx';
 import DeliveryPage from './pages/DeliveryPage.tsx';
@@ -42,10 +42,13 @@ export default function App() {
 
 function ProtectedRoute({ allow, children, loading }) {
   const { currentUser } = useApp();
+  const location = useLocation();
   if (loading) {
     return <div className="rounded-lg bg-white p-6 text-sm font-bold text-stone-600 shadow-sm">Cargando permisos...</div>;
   }
-  if (!currentUser) return <Navigate to="/login" replace />;
+  if (!currentUser) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
   if (!allow) return <Navigate to="/" replace />;
   return children;
 }

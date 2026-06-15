@@ -4,6 +4,16 @@ import { foodImage, logoImage } from '../assets.ts';
 
 const AppContext = createContext(null);
 
+function storedJson(key, fallback) {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : fallback;
+  } catch (_error) {
+    localStorage.removeItem(key);
+    return fallback;
+  }
+}
+
 async function optionalProducts(stores = [], user = null) {
   const load = async () => {
     const publicProducts = await api.get('/api/v1/productos').catch(() => []);
@@ -35,15 +45,9 @@ export function useApp() {
 export function AppProvider({ children }) {
   const [restaurants, setRestaurants] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
-  const [cart, setCart] = useState<any[]>([]);
-  const [currentUser, setCurrentUser] = useState(() => {
-    const stored = localStorage.getItem('usuario');
-    return stored ? JSON.parse(stored) : null;
-  });
-  const [lastOrder, setLastOrder] = useState(() => {
-    const stored = localStorage.getItem('lastOrder');
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [cart, setCart] = useState<any[]>(() => storedJson('cart', []));
+  const [currentUser, setCurrentUser] = useState(() => storedJson('usuario', null));
+  const [lastOrder, setLastOrder] = useState(() => storedJson('lastOrder', null));
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
 
@@ -190,19 +194,27 @@ export function AppProvider({ children }) {
     return () => window.clearInterval(interval);
   }, [currentUser]);
 
+  useEffect(() => {
+    localStorage.setItem('cart', JSON.stringify(cart));
+  }, [cart]);
+
   const addToCart = (restaurant, item) => {
     if (!item.available) return;
 
     setCart((current) => {
-      const found = current.find((entry) => entry.id === item.id);
+      const restaurantId = restaurant.id_tienda || Number(restaurant.id);
+      const sameRestaurant = current.filter((entry) => entry.restaurantId === restaurantId);
+      const found = sameRestaurant.find((entry) => entry.id === item.id);
       if (found) {
-        return current.map((entry) => (entry.id === item.id ? { ...entry, quantity: entry.quantity + 1 } : entry));
+        return sameRestaurant.map((entry) => (
+          entry.id === item.id ? { ...entry, quantity: entry.quantity + 1 } : entry
+        ));
       }
-      return [...current, {
+      return [...sameRestaurant, {
         ...item,
         quantity: 1,
         restaurantName: restaurant.name,
-        restaurantId: restaurant.id_tienda || Number(restaurant.id),
+        restaurantId,
         restaurantLocation: restaurant.nombre_lugar || restaurant.locationText || restaurant.category,
         restaurantReference: restaurant.referencia || ''
       }];
