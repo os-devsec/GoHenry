@@ -58,6 +58,12 @@ async def proxy(path: str, request: Request) -> Response:
     full_path = "/" + path
     target = target_for(full_path)
     if target is None:
+        if full_path == "/api" or full_path.startswith("/api/"):
+            return Response(
+                content='{"detail":"Ruta de API no encontrada"}',
+                status_code=404,
+                media_type="application/json",
+            )
         if request.method == "GET" and FRONTEND_DIR.exists():
             requested_file = (FRONTEND_DIR / path).resolve()
             if FRONTEND_DIR in requested_file.parents and requested_file.is_file():
