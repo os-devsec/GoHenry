@@ -13,8 +13,12 @@ async function request(path: string, options: RequestInit = {}) {
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, { ...options, headers });
-  } catch (_error) {
-    throw new Error(`No se pudo conectar con la API en ${API_URL}. Levanta el backend con docker compose up --build.`);
+  } catch (error) {
+    const connectionError = new Error(
+      `No se pudo conectar con la API en ${API_URL}. Levanta el backend con docker compose up --build.`
+    ) as Error & { cause?: unknown };
+    connectionError.cause = error;
+    throw connectionError;
   }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Error de API' }));

@@ -52,6 +52,15 @@ def delete_store(
     return services.delete_store(session, id_tienda, user)
 
 
+@router.delete("/api/v1/tiendas/{id_tienda}")
+def delete_store(
+    id_tienda: int,
+    user: dict[str, Any] = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    return services.delete_store(session, id_tienda, user)
+
+
 @router.post("/api/v1/tiendas/{id_tienda}/logo")
 async def upload_store_logo(
     id_tienda: int,

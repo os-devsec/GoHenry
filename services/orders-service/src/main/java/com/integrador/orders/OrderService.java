@@ -11,12 +11,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
-import java.text.Normalizer;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Locale;
 import java.util.NoSuchElementException;
 
 @Service
@@ -182,17 +180,29 @@ public class OrderService {
     public Map<String, Object> cotizarEnvio(Map<String, Object> body) {
         int idTienda = Utils.intValue(body.get("id_tienda"), 0);
         int idUbicacion = Utils.intValue(body.get("id_ubicacion_entrega"), 0);
-        if (idTienda <= 0 || idUbicacion <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tienda y ubicacion de entrega requeridas");
+        String destinationName = Utils.stringValue(body.get("nombre_lugar"), "").trim();
+        String destinationReference = Utils.stringValue(body.get("referencia"), "").trim();
+        if (idTienda <= 0 || (idUbicacion <= 0 && destinationName.isEmpty())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Tienda y ubicacion de entrega requeridas"
+            );
         }
-        Map<String, Object> route = ubicacionesParaEnvio(idTienda, idUbicacion);
-        double cost = calcularCostoEnvio(
+
+        Map<String, Object> route = idUbicacion > 0
+                ? ubicacionesParaEnvio(idTienda, idUbicacion)
+                : ubicacionTienda(idTienda);
+        if (idUbicacion <= 0) {
+            route.put("destino", destinationName);
+            route.put("referencia_destino", destinationReference);
+        }
+        double cost = DeliveryFeeCalculator.calculate(
                 textoUbicacion(route.get("origen"), route.get("referencia_origen")),
                 textoUbicacion(route.get("destino"), route.get("referencia_destino"))
         );
         Map<String, Object> quote = new HashMap<>();
         quote.put("id_tienda", idTienda);
-        quote.put("id_ubicacion_entrega", idUbicacion);
+        quote.put("id_ubicacion_entrega", idUbicacion > 0 ? idUbicacion : null);
         quote.put("origen", route.get("origen"));
         quote.put("destino", route.get("destino"));
         quote.put("referencia_origen", route.get("referencia_origen"));
@@ -365,9 +375,18 @@ public class OrderService {
 
     private double calcularCostoEnvio(int idTienda, int idUbicacionEntrega) {
         Map<String, Object> locations = ubicacionesParaEnvio(idTienda, idUbicacionEntrega);
-        return calcularCostoEnvio(
+        return DeliveryFeeCalculator.calculate(
                 textoUbicacion(locations.get("origen"), locations.get("referencia_origen")),
                 textoUbicacion(locations.get("destino"), locations.get("referencia_destino"))
+        );
+    }
+
+    private Map<String, Object> ubicacionTienda(int idTienda) {
+        return jdbc.queryForMap(
+                "SELECT ut.nombre_lugar AS origen, ut.referencia AS referencia_origen " +
+                        "FROM tienda t JOIN ubicacion ut ON ut.id_ubicacion = t.id_ubicacion " +
+                        "WHERE t.id_tienda = ? AND t.estado = 1",
+                idTienda
         );
     }
 
@@ -384,39 +403,8 @@ public class OrderService {
         );
     }
 
-    private double calcularCostoEnvio(String originValue, String destinationValue) {
-        String origin = normalizeLocation(originValue);
-        String destination = normalizeLocation(destinationValue);
-        String originZone = specialZone(origin);
-        String destinationZone = specialZone(destination);
-
-        if (originZone != null && destinationZone != null && !originZone.equals(destinationZone)) {
-            return 1.5;
-        }
-        if (originZone == null && destinationZone != null) {
-            return 1.0;
-        }
-        return 0.5;
-    }
-
-    private String specialZone(String location) {
-        if (location.contains("gastronomia") || location.contains("automotriz")) {
-            return "automotriz_gastronomia";
-        }
-        if (location.contains("deportes")) {
-            return "deportes";
-        }
-        return null;
-    }
-
     private String textoUbicacion(Object nombre, Object referencia) {
         return (Utils.stringValue(nombre, "") + " " + Utils.stringValue(referencia, "")).trim();
-    }
-
-    private String normalizeLocation(String value) {
-        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "");
-        return normalized.toLowerCase(Locale.ROOT).trim();
     }
 
     private boolean descuentoActivo(Map<String, Object> product) {

@@ -1,11 +1,12 @@
 import React from 'react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { appLogo, foodImage } from '../assets.ts';
 import { useApp } from '../context/AppContext.tsx';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useApp();
   const [form, setForm] = useState({ correo: '', password: '' });
   const [error, setError] = useState('');
@@ -15,7 +16,7 @@ export default function LoginPage() {
     try {
       setError('');
       await login(form.correo, form.password);
-      navigate('/');
+      navigate(location.state?.from || '/', { replace: true });
     } catch (apiError) {
       setError(apiError.message);
     }
