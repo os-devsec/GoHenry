@@ -1,6 +1,9 @@
 SET XACT_ABORT ON;
 GO
 
+DROP TRIGGER IF EXISTS TR_V_Actualizar_Estado_Pedido_Update;
+GO
+
 DROP VIEW IF EXISTS V_Productos_Catalogo_Tienda;
 DROP VIEW IF EXISTS V_Productos_Catalogo;
 DROP VIEW IF EXISTS V_Usuarios_Permisos;
@@ -309,6 +312,7 @@ SELECT
   ar.id_asignacion,
   p.id_pedido,
   ar.id_usuario AS id_repartidor,
+  p.id_usuario AS id_cliente,
   CASE
     WHEN rep.id_usuario IS NULL THEN NULL
     ELSE CONCAT(rep.nombre, ' ', rep.apellido)
@@ -327,16 +331,21 @@ SELECT
   p.total_descuento,
   p.costo_envio,
   p.total,
+  p.total AS costo_pedido,
+  ROUND(p.total + p.costo_envio, 2) AS total_con_envio,
+  COALESCE(c.monto, p.costo_envio) AS ganancia_envio,
   ar.fecha_asignacion,
   ar.fecha_aceptacion,
   ar.fecha_entrega,
-  ar.observacion
+  ar.observacion,
+  t.nombre AS tienda_nombre
 FROM asignacion_repartidor ar
 INNER JOIN pedido p ON ar.id_pedido = p.id_pedido
 LEFT JOIN usuario rep ON ar.id_usuario = rep.id_usuario
 INNER JOIN usuario cli ON p.id_usuario = cli.id_usuario
 INNER JOIN tienda t ON p.id_tienda = t.id_tienda
-INNER JOIN ubicacion u ON p.id_ubicacion_entrega = u.id_ubicacion;
+INNER JOIN ubicacion u ON p.id_ubicacion_entrega = u.id_ubicacion
+LEFT JOIN comision c ON c.id_pedido = p.id_pedido AND c.id_usuario = ar.id_usuario;
 GO
 
 CREATE VIEW V_Actualizar_Estado_Pedido AS
@@ -354,6 +363,20 @@ SELECT
   p.total
 FROM pedido p
 INNER JOIN estado_pedido ep ON p.id_estado_pedido = ep.id_estado_pedido;
+GO
+
+CREATE TRIGGER TR_V_Actualizar_Estado_Pedido_Update
+ON V_Actualizar_Estado_Pedido
+INSTEAD OF UPDATE
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  UPDATE p
+  SET id_estado_pedido = i.id_estado_pedido
+  FROM pedido p
+  INNER JOIN inserted i ON p.id_pedido = i.id_pedido;
+END;
 GO
 
 CREATE VIEW V_Ventas_Tiendas AS
