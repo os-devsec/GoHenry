@@ -226,6 +226,16 @@ export default function RestaurantAdminPage() {
     await loadStaff();
   };
 
+  const removeProduct = async (item) => {
+    const confirmed = window.confirm(`Eliminar "${item.name}" definitivamente?\n\nEsta accion no se puede deshacer.`);
+    if (!confirmed) return;
+    try {
+      await deleteMenuItem(restaurant.id, item.id);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'No se pudo eliminar el plato.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <section aria-labelledby="restaurant-admin-title" className="flex flex-col gap-4 rounded-lg bg-wine-700 p-5 text-white shadow-soft md:flex-row md:items-center md:justify-between">
@@ -471,7 +481,7 @@ export default function RestaurantAdminPage() {
                     {item.enabled ? (Number(item.stock) > 0 ? 'Disponible' : 'Sin stock') : 'Pausado'}
                   </button>
                   <IconButton label={`Editar ${item.name}`} onClick={() => startEditingProduct(item)} icon={<Pencil size={16} />} />
-                  <IconButton label={`Eliminar ${item.name}`} onClick={() => deleteMenuItem(restaurant.id, item.id)} icon={<Trash2 size={16} />} />
+                  <IconButton label={`Eliminar ${item.name}`} onClick={() => removeProduct(item)} icon={<Trash2 size={16} />} />
                 </div>}
               </article>
               )}

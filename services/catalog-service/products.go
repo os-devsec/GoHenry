@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -274,7 +275,15 @@ func deleteProduct(ctx *gin.Context) {
 		ctx.JSON(http.StatusForbidden, gin.H{"detail": "No tienes permisos para modificar este producto"})
 		return
 	}
-	if err := queries.UpdateProductAvailability(catalogdb.UpdateProductAvailabilityParams{Estado: 0, IDProducto: ctx.Param("id")}); err != nil {
+	if err := queries.DeleteProduct(ctx.Param("id")); err != nil {
+		if errors.Is(err, catalogdb.ErrProductHasOrders) {
+			ctx.JSON(http.StatusConflict, gin.H{"detail": "No se puede borrar definitivamente un producto que ya tiene pedidos registrados"})
+			return
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, gin.H{"detail": "Producto no encontrado"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
 		return
 	}

@@ -2,8 +2,11 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
+
+var ErrProductHasOrders = errors.New("product has order history")
 
 type Queries struct {
 	db *sql.DB
@@ -134,6 +137,40 @@ func (q *Queries) UpdateProduct(params UpdateProductParams) error {
 func (q *Queries) UpdateProductAvailability(params UpdateProductAvailabilityParams) error {
 	_, err := q.db.Exec("UPDATE producto SET estado = @p1 WHERE id_producto = @p2", params.Estado, params.IDProducto)
 	return err
+}
+
+func (q *Queries) DeleteProduct(idProducto any) error {
+	tx, err := q.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var orderDetails int
+	if err := tx.QueryRow("SELECT COUNT(1) FROM detalle_pedido WHERE id_producto = @p1", idProducto).Scan(&orderDetails); err != nil {
+		return err
+	}
+	if orderDetails > 0 {
+		return ErrProductHasOrders
+	}
+	if _, err := tx.Exec("DELETE FROM detalle_carrito WHERE id_producto = @p1", idProducto); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM producto_categoria WHERE id_producto = @p1", idProducto); err != nil {
+		return err
+	}
+	result, err := tx.Exec("DELETE FROM producto WHERE id_producto = @p1", idProducto)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
 }
 
 func (q *Queries) UpdateProductDiscount(params UpdateProductDiscountParams) error {
