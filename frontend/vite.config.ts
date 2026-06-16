@@ -16,7 +16,7 @@ export default defineConfig({
       ],
       manifest: {
         name: 'GoHenryGo',
-        short_name: 'GoHenryGo',
+        short_name: 'GoHenry',
         description: 'Marketplace de pedidos y delivery para restaurantes.',
         lang: 'es',
         start_url: '/',
@@ -26,19 +26,33 @@ export default defineConfig({
         background_color: '#faf8f4',
         theme_color: '#dc2626',
         categories: ['food', 'shopping'],
+        screenshots: [
+          {
+            src: '/screenshots/screenshot1.png',
+            sizes: '352x778',
+            type: 'image/png',
+            form_factor: 'narrow',
+          },
+          {
+            src: '/screenshots/screenshot2.png',
+            sizes: '846x832',
+            type: 'image/png',
+            form_factor: 'wide',
+          }
+        ],
         icons: [
           {
-            src: '/pwa-192.png',
+            src: '/icons/pwa-192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/pwa-512.png',
+            src: '/icons/pwa-512.png',
             sizes: '512x512',
             type: 'image/png',
           },
           {
-            src: '/pwa-maskable.png',
+            src: '/icons/pwa-maskable.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',

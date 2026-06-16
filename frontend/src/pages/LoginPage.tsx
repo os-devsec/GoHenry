@@ -42,7 +42,7 @@ export default function LoginPage() {
         <Field label="Correo">
           <input required autoComplete="email" className="field" type="email" value={form.correo} onChange={(event) => setForm({ ...form, correo: event.target.value })} placeholder="correo@ejemplo.com" />
         </Field>
-        <Field label="Contrasena">
+        <Field label="Contraseña">
           <input required autoComplete="current-password" className="field" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Contrasena" />
         </Field>
         {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{error}</p>}

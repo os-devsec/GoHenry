@@ -64,13 +64,13 @@ export default function RegisterPage() {
             <Field label="Apellido">
               <input required autoComplete="family-name" className="field" value={form.apellido} onChange={(event) => setForm({ ...form, apellido: event.target.value })} placeholder="Apellido" />
             </Field>
-            <Field label="Correo institucional" wide>
+            <Field label="Correo" wide>
               <input required autoComplete="email" className="field" type="email" value={form.correo} onChange={(event) => setForm({ ...form, correo: event.target.value })} placeholder="correo@ejemplo.com" />
             </Field>
             <Field label="Telefono">
               <input required autoComplete="tel" className="field" type="tel" inputMode="numeric" pattern="[0-9]{10}" minLength={10} maxLength={10} value={form.telefono} onChange={(event) => setForm({ ...form, telefono: event.target.value.replace(/\D/g, '').slice(0, 10) })} placeholder="10 digitos" />
             </Field>
-            <Field label="Contrasena">
+            <Field label="Contraseña">
               <input required autoComplete="new-password" className="field" type="password" minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Minimo 8 caracteres" />
             </Field>
           </div>
