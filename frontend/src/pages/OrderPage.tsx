@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext.tsx';
 import { formatCurrency } from '../utils/format.ts';
 import { customerErrorMessage } from '../utils/errors.ts';
+import { whatsappPhone, whatsappUrl } from '../utils/whatsapp.ts';
 
 export default function OrderPage() {
   const { cancelOrder, currentUser, dismissLastOrder, lastOrder, refreshLatestOrder, refreshOrder } = useApp();
@@ -61,8 +62,8 @@ export default function OrderPage() {
 
   const repartidor = order.asignacion;
   const isPickup = order.tipo_pedido === 'pickup';
-  const phone = repartidor?.telefono?.replace(/\D/g, '');
-  const whatsappUrl = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola, soy del pedido #${order.id_pedido}.`)}` : '#';
+  const phone = whatsappPhone(repartidor?.telefono);
+  const chatUrl = whatsappUrl(repartidor?.telefono, `Hola, soy del pedido #${order.id_pedido}.`);
   const assignmentStatus = repartidor?.estado_asignacion;
   const restaurantAccepted = !['pendiente', 'cancelado'].includes(order.estado_nombre);
   const deliveryAssigned = ['aceptada', 'en_camino', 'entregada'].includes(assignmentStatus);
@@ -189,7 +190,7 @@ export default function OrderPage() {
           </dl>
           {phone && (
             <a
-              href={whatsappUrl}
+              href={chatUrl}
               target="_blank"
               rel="noreferrer"
               className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-green-500 px-5 py-3 font-black text-white"

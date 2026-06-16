@@ -2,6 +2,13 @@ SET XACT_ABORT ON;
 GO
 
 DROP TRIGGER IF EXISTS TR_V_Actualizar_Estado_Pedido_Update;
+DROP TRIGGER IF EXISTS TR_DetallePedido_Control_Stock;
+DROP TRIGGER IF EXISTS TR_Producto_Auditoria_Stock;
+GO
+
+DROP PROCEDURE IF EXISTS SP_Registrar_Pago;
+DROP PROCEDURE IF EXISTS SP_Aceptar_Asignacion;
+DROP PROCEDURE IF EXISTS SP_Registrar_Pedido;
 GO
 
 DROP VIEW IF EXISTS V_Productos_Catalogo_Tienda;
@@ -13,6 +20,10 @@ DROP VIEW IF EXISTS V_Actualizar_Estado_Pedido;
 DROP VIEW IF EXISTS V_Ordenes_Repartidor;
 GO
 
+DROP TYPE IF EXISTS TipoDetallePedido;
+GO
+
+DROP TABLE IF EXISTS auditoria_stock;
 DROP TABLE IF EXISTS comision;
 DROP TABLE IF EXISTS pago;
 DROP TABLE IF EXISTS metodo_pago;
@@ -478,4 +489,427 @@ GROUP BY
   p.id_producto, p.nombre, p.descripcion, p.precio, p.stock, p.imagen_url,
   t.id_tienda, t.nombre, t.logo_url, p.descuento_porcentaje,
   p.descuento_inicio, p.descuento_fin, p.estado;
+GO
+
+CREATE NONCLUSTERED INDEX IX_producto_tienda_estado_nombre
+ON producto (id_tienda, estado, nombre)
+INCLUDE (precio, stock, imagen_url, descuento_porcentaje, descuento_inicio, descuento_fin);
+
+CREATE NONCLUSTERED INDEX IX_producto_stock_estado
+ON producto (stock, estado)
+INCLUDE (id_tienda, nombre, precio);
+
+CREATE NONCLUSTERED INDEX IX_pedido_usuario_fecha
+ON pedido (id_usuario, fecha_pedido DESC)
+INCLUDE (id_tienda, id_estado_pedido, tipo_pedido, total);
+
+CREATE NONCLUSTERED INDEX IX_pedido_tienda_estado_fecha
+ON pedido (id_tienda, id_estado_pedido, fecha_pedido DESC)
+INCLUDE (id_usuario, tipo_pedido, subtotal, total_descuento, total);
+
+CREATE NONCLUSTERED INDEX IX_detalle_pedido_pedido
+ON detalle_pedido (id_pedido)
+INCLUDE (id_producto, cantidad, precio_unitario, descuento_unitario, subtotal);
+
+CREATE NONCLUSTERED INDEX IX_detalle_pedido_producto
+ON detalle_pedido (id_producto, id_pedido)
+INCLUDE (cantidad, precio_unitario, descuento_unitario, subtotal);
+GO
+
+CREATE TABLE auditoria_stock (
+  id_auditoria BIGINT IDENTITY(1,1) NOT NULL,
+  id_producto INT NOT NULL,
+  stock_anterior INT NOT NULL,
+  stock_nuevo INT NOT NULL,
+  diferencia INT NOT NULL,
+  fecha_cambio DATETIME2(0) NOT NULL CONSTRAINT DF_auditoria_stock_fecha DEFAULT SYSDATETIME(),
+  usuario_bd SYSNAME NOT NULL CONSTRAINT DF_auditoria_stock_usuario DEFAULT SUSER_SNAME(),
+  origen NVARCHAR(128) NULL,
+  CONSTRAINT PK_auditoria_stock PRIMARY KEY CLUSTERED (id_auditoria),
+  CONSTRAINT FK_auditoria_stock_producto FOREIGN KEY (id_producto) REFERENCES producto(id_producto)
+);
+
+CREATE NONCLUSTERED INDEX IX_auditoria_stock_producto_fecha
+ON auditoria_stock (id_producto, fecha_cambio DESC)
+INCLUDE (stock_anterior, stock_nuevo, diferencia, usuario_bd, origen);
+GO
+
+CREATE TYPE TipoDetallePedido AS TABLE (
+  id_producto INT NOT NULL,
+  cantidad INT NOT NULL CHECK (cantidad > 0),
+  PRIMARY KEY (id_producto)
+);
+GO
+
+CREATE TRIGGER TR_Producto_Auditoria_Stock
+ON producto
+AFTER UPDATE
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF NOT UPDATE(stock)
+    RETURN;
+
+  INSERT INTO auditoria_stock (
+    id_producto,
+    stock_anterior,
+    stock_nuevo,
+    diferencia,
+    usuario_bd,
+    origen
+  )
+  SELECT
+    i.id_producto,
+    d.stock,
+    i.stock,
+    i.stock - d.stock,
+    SUSER_SNAME(),
+    COALESCE(CONVERT(NVARCHAR(128), SESSION_CONTEXT(N'origen_stock')), N'Actualizacion directa')
+  FROM inserted i
+  INNER JOIN deleted d ON i.id_producto = d.id_producto
+  WHERE i.stock <> d.stock;
+END;
+GO
+
+CREATE TRIGGER TR_DetallePedido_Control_Stock
+ON detalle_pedido
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  DECLARE @movimientos TABLE (
+    id_producto INT NOT NULL PRIMARY KEY,
+    cantidad_neta INT NOT NULL
+  );
+
+  INSERT INTO @movimientos (id_producto, cantidad_neta)
+  SELECT id_producto, SUM(cantidad_neta)
+  FROM (
+    SELECT id_producto, cantidad AS cantidad_neta FROM inserted
+    UNION ALL
+    SELECT id_producto, -cantidad AS cantidad_neta FROM deleted
+  ) movimientos
+  GROUP BY id_producto
+  HAVING SUM(cantidad_neta) <> 0;
+
+  IF EXISTS (
+    SELECT 1
+    FROM @movimientos m
+    INNER JOIN producto p WITH (UPDLOCK, HOLDLOCK) ON p.id_producto = m.id_producto
+    WHERE m.cantidad_neta > 0
+      AND m.cantidad_neta > p.stock
+  )
+  BEGIN
+    THROW 52001, 'Stock insuficiente para registrar el detalle del pedido.', 1;
+  END;
+
+  EXEC sys.sp_set_session_context @key = N'origen_stock', @value = N'TR_DetallePedido_Control_Stock';
+
+  BEGIN TRY
+    UPDATE p
+    SET p.stock = p.stock - m.cantidad_neta
+    FROM producto p
+    INNER JOIN @movimientos m ON m.id_producto = p.id_producto;
+
+    EXEC sys.sp_set_session_context @key = N'origen_stock', @value = NULL;
+  END TRY
+  BEGIN CATCH
+    EXEC sys.sp_set_session_context @key = N'origen_stock', @value = NULL;
+    THROW;
+  END CATCH;
+END;
+GO
+
+CREATE PROCEDURE SP_Registrar_Pedido
+  @id_usuario INT,
+  @id_tienda INT,
+  @id_ubicacion_entrega INT,
+  @tipo_pedido VARCHAR(20),
+  @costo_envio DECIMAL(10,2),
+  @detalle TipoDetallePedido READONLY,
+  @id_pedido_generado INT OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+
+  IF @tipo_pedido NOT IN ('delivery', 'pickup')
+    THROW 53001, 'El tipo de pedido debe ser delivery o pickup.', 1;
+  IF @costo_envio < 0
+    THROW 53008, 'El costo de envio no puede ser negativo.', 1;
+  IF @tipo_pedido = 'pickup' AND @costo_envio <> 0
+    THROW 53009, 'Los pedidos pickup no deben tener costo de envio.', 1;
+  IF NOT EXISTS (SELECT 1 FROM @detalle)
+    THROW 53002, 'El pedido debe contener al menos un producto.', 1;
+
+  IF NOT EXISTS (SELECT 1 FROM usuario WHERE id_usuario = @id_usuario AND estado = 1)
+    THROW 53003, 'El usuario no existe o esta inactivo.', 1;
+  IF NOT EXISTS (SELECT 1 FROM tienda WHERE id_tienda = @id_tienda AND estado = 1)
+    THROW 53004, 'La tienda no existe o esta inactiva.', 1;
+  IF NOT EXISTS (SELECT 1 FROM ubicacion WHERE id_ubicacion = @id_ubicacion_entrega AND estado = 1)
+    THROW 53005, 'La ubicacion de entrega no existe o esta inactiva.', 1;
+  IF EXISTS (
+    SELECT 1
+    FROM @detalle d
+    LEFT JOIN producto p ON p.id_producto = d.id_producto
+    WHERE p.id_producto IS NULL OR p.id_tienda <> @id_tienda OR p.estado = 0
+  )
+    THROW 53006, 'Todos los productos deben estar activos y pertenecer a la tienda indicada.', 1;
+
+  DECLARE @id_estado_pendiente INT;
+  SELECT @id_estado_pendiente = id_estado_pedido FROM estado_pedido WHERE nombre = N'pendiente';
+  IF @id_estado_pendiente IS NULL
+    THROW 53007, 'No existe el estado de pedido pendiente.', 1;
+
+  DECLARE @lineas TABLE (
+    id_producto INT NOT NULL PRIMARY KEY,
+    cantidad INT NOT NULL,
+    precio_unitario DECIMAL(10,2) NOT NULL,
+    descuento_unitario DECIMAL(10,2) NOT NULL,
+    subtotal_linea DECIMAL(10,2) NOT NULL
+  );
+
+  INSERT INTO @lineas (id_producto, cantidad, precio_unitario, descuento_unitario, subtotal_linea)
+  SELECT
+    p.id_producto,
+    d.cantidad,
+    p.precio,
+    CAST(CASE
+      WHEN p.descuento_porcentaje > 0
+       AND p.descuento_inicio IS NOT NULL
+       AND p.descuento_fin IS NOT NULL
+       AND CONVERT(TIME(0), GETDATE()) >= TRY_CONVERT(TIME(0), p.descuento_inicio)
+       AND CONVERT(TIME(0), GETDATE()) < TRY_CONVERT(TIME(0), p.descuento_fin)
+      THEN ROUND(p.precio * p.descuento_porcentaje / 100.0, 2)
+      ELSE 0
+    END AS DECIMAL(10,2)),
+    CAST(d.cantidad * (
+      p.precio - CASE
+        WHEN p.descuento_porcentaje > 0
+         AND p.descuento_inicio IS NOT NULL
+         AND p.descuento_fin IS NOT NULL
+         AND CONVERT(TIME(0), GETDATE()) >= TRY_CONVERT(TIME(0), p.descuento_inicio)
+         AND CONVERT(TIME(0), GETDATE()) < TRY_CONVERT(TIME(0), p.descuento_fin)
+        THEN ROUND(p.precio * p.descuento_porcentaje / 100.0, 2)
+        ELSE 0
+      END
+    ) AS DECIMAL(10,2))
+  FROM @detalle d
+  INNER JOIN producto p ON p.id_producto = d.id_producto;
+
+  DECLARE @subtotal DECIMAL(10,2);
+  DECLARE @total_descuento DECIMAL(10,2);
+  DECLARE @total DECIMAL(10,2);
+
+  SELECT
+    @subtotal = SUM(cantidad * precio_unitario),
+    @total_descuento = SUM(cantidad * descuento_unitario),
+    @total = SUM(subtotal_linea)
+  FROM @lineas;
+
+  BEGIN TRY
+    BEGIN TRANSACTION;
+
+    INSERT INTO pedido (
+      id_usuario,
+      id_tienda,
+      id_estado_pedido,
+      id_ubicacion_entrega,
+      fecha_pedido,
+      tipo_pedido,
+      subtotal,
+      total_descuento,
+      costo_envio,
+      total
+    )
+    VALUES (
+      @id_usuario,
+      @id_tienda,
+      @id_estado_pendiente,
+      @id_ubicacion_entrega,
+      GETDATE(),
+      @tipo_pedido,
+      @subtotal,
+      @total_descuento,
+      @costo_envio,
+      @total
+    );
+
+    SET @id_pedido_generado = CONVERT(INT, SCOPE_IDENTITY());
+
+    INSERT INTO detalle_pedido (
+      id_pedido,
+      id_producto,
+      cantidad,
+      precio_unitario,
+      descuento_unitario,
+      subtotal
+    )
+    SELECT
+      @id_pedido_generado,
+      id_producto,
+      cantidad,
+      precio_unitario,
+      descuento_unitario,
+      subtotal_linea
+    FROM @lineas;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0
+      ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH;
+
+  SELECT p.id_pedido, p.fecha_pedido, p.subtotal, p.total_descuento, p.total, ep.nombre AS estado
+  FROM pedido p
+  INNER JOIN estado_pedido ep ON p.id_estado_pedido = ep.id_estado_pedido
+  WHERE p.id_pedido = @id_pedido_generado;
+END;
+GO
+
+CREATE PROCEDURE SP_Aceptar_Asignacion
+  @id_asignacion INT,
+  @id_repartidor INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM usuario
+    WHERE id_usuario = @id_repartidor
+      AND acepta_repartos = 1
+      AND estado = 1
+  )
+    THROW 53501, 'El usuario no es un repartidor activo disponible para aceptar pedidos.', 1;
+
+  IF EXISTS (
+    SELECT 1
+    FROM asignacion_repartidor WITH (UPDLOCK, HOLDLOCK)
+    WHERE id_usuario = @id_repartidor
+      AND estado_asignacion IN ('aceptada', 'en_camino')
+  )
+    THROW 53502, 'El repartidor ya tiene una entrega activa.', 1;
+
+  DECLARE @id_pedido INT;
+  DECLARE @monto_comision DECIMAL(10,2);
+
+  BEGIN TRY
+    BEGIN TRANSACTION;
+
+    UPDATE asignacion_repartidor WITH (UPDLOCK, ROWLOCK)
+    SET
+      id_usuario = @id_repartidor,
+      estado_asignacion = 'aceptada',
+      fecha_aceptacion = GETDATE(),
+      observacion = N'Pedido aceptado por el repartidor'
+    WHERE id_asignacion = @id_asignacion
+      AND estado_asignacion = 'pendiente'
+      AND id_usuario IS NULL;
+
+    IF @@ROWCOUNT <> 1
+    BEGIN
+      ROLLBACK TRANSACTION;
+      SELECT CAST(0 AS BIT) AS aceptada, N'La asignacion no existe o ya fue aceptada por otro repartidor.' AS mensaje;
+      RETURN 1;
+    END;
+
+    SELECT
+      @id_pedido = ar.id_pedido,
+      @monto_comision = p.costo_envio
+    FROM asignacion_repartidor ar
+    INNER JOIN pedido p ON p.id_pedido = ar.id_pedido
+    WHERE ar.id_asignacion = @id_asignacion;
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM comision
+      WHERE id_usuario = @id_repartidor
+        AND id_pedido = @id_pedido
+    )
+    BEGIN
+      INSERT INTO comision (id_usuario, id_pedido, monto, estado_comision)
+      VALUES (@id_repartidor, @id_pedido, @monto_comision, 'pendiente');
+    END;
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0
+      ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH;
+
+  SELECT *
+  FROM V_Ordenes_Repartidor
+  WHERE id_asignacion = @id_asignacion;
+
+  RETURN 0;
+END;
+GO
+
+CREATE PROCEDURE SP_Registrar_Pago
+  @id_pedido INT,
+  @id_metodo_pago INT,
+  @estado_pago VARCHAR(30) = 'pagado',
+  @id_pago_generado INT OUTPUT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+
+  IF @estado_pago NOT IN ('pendiente', 'pagado', 'rechazado')
+    THROW 54001, 'El estado de pago no es valido.', 1;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM metodo_pago
+    WHERE id_metodo_pago = @id_metodo_pago
+      AND estado = 1
+  )
+    THROW 54002, 'El metodo de pago no existe o esta inactivo.', 1;
+
+  DECLARE @monto_total DECIMAL(10,2);
+  DECLARE @estado_pedido NVARCHAR(80);
+
+  SELECT
+    @monto_total = p.total + p.costo_envio,
+    @estado_pedido = ep.nombre
+  FROM pedido p
+  INNER JOIN estado_pedido ep ON p.id_estado_pedido = ep.id_estado_pedido
+  WHERE p.id_pedido = @id_pedido;
+
+  IF @monto_total IS NULL
+    THROW 54003, 'El pedido no existe.', 1;
+  IF @estado_pedido IN (N'cancelado', N'rechazado')
+    THROW 54005, 'No se puede registrar pago para un pedido cancelado o rechazado.', 1;
+  IF EXISTS (SELECT 1 FROM pago WHERE id_pedido = @id_pedido)
+    THROW 54004, 'El pedido ya tiene un pago registrado.', 1;
+
+  BEGIN TRY
+    BEGIN TRANSACTION;
+
+    INSERT INTO pago (id_pedido, id_metodo_pago, monto_total, estado_pago, fecha_pago)
+    VALUES (@id_pedido, @id_metodo_pago, @monto_total, @estado_pago, GETDATE());
+
+    SET @id_pago_generado = CONVERT(INT, SCOPE_IDENTITY());
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0
+      ROLLBACK TRANSACTION;
+    THROW;
+  END CATCH;
+
+  SELECT pa.id_pago, pa.id_pedido, mp.nombre AS metodo_pago, pa.monto_total, pa.estado_pago, pa.fecha_pago
+  FROM pago pa
+  INNER JOIN metodo_pago mp ON pa.id_metodo_pago = mp.id_metodo_pago
+  WHERE pa.id_pago = @id_pago_generado;
+END;
 GO

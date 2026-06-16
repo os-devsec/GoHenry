@@ -1,12 +1,14 @@
 import React from 'react';
 import { Check, MapPin, MessageCircle, Navigation, PackageCheck } from 'lucide-react';
+import { whatsappPhone, whatsappUrl } from '../../utils/whatsapp.ts';
 
 export default function DeliveryOrderCard({ order, onDeliver, onStart }) {
   const isOnWay = order.assignmentStatus === 'en_camino';
-  const phone = order.clientPhone?.replace(/\D/g, '');
-  const whatsappUrl = phone
-    ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hola ${order.clientName || ''}, soy el repartidor de tu pedido #${order.orderId}.`)}`
-    : '#';
+  const phone = whatsappPhone(order.clientPhone);
+  const chatUrl = whatsappUrl(
+    order.clientPhone,
+    `Hola ${order.clientName || ''}, soy el repartidor de tu pedido #${order.orderId}.`
+  );
 
   return (
     <article className="rounded-lg bg-white p-4 shadow-sm">
@@ -40,7 +42,7 @@ export default function DeliveryOrderCard({ order, onDeliver, onStart }) {
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {phone && (
-          <a href={whatsappUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-full bg-green-500 px-4 py-2 text-sm font-black text-white">
+          <a href={chatUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-full bg-green-500 px-4 py-2 text-sm font-black text-white">
             <MessageCircle size={16} /> Escribir al cliente
           </a>
         )}

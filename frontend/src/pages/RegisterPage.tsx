@@ -17,8 +17,14 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
 
+  const cleanPersonName = (value) => value.replace(/[0-9]/g, '');
+
   const submit = async (event) => {
     event.preventDefault();
+    if (/\d/.test(form.nombre) || /\d/.test(form.apellido)) {
+      setError('El nombre y apellido no pueden contener numeros.');
+      return;
+    }
     if (!/^\d{10}$/.test(form.telefono)) {
       setError('El telefono debe tener exactamente 10 digitos.');
       return;
@@ -59,10 +65,10 @@ export default function RegisterPage() {
         <FormSection title="Datos de cuenta">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nombre">
-              <input required autoComplete="given-name" className="field" value={form.nombre} onChange={(event) => setForm({ ...form, nombre: event.target.value })} placeholder="Nombre" />
+              <input required autoComplete="given-name" className="field" pattern="[^0-9]*" value={form.nombre} onChange={(event) => setForm({ ...form, nombre: cleanPersonName(event.target.value) })} placeholder="Nombre" />
             </Field>
             <Field label="Apellido">
-              <input required autoComplete="family-name" className="field" value={form.apellido} onChange={(event) => setForm({ ...form, apellido: event.target.value })} placeholder="Apellido" />
+              <input required autoComplete="family-name" className="field" pattern="[^0-9]*" value={form.apellido} onChange={(event) => setForm({ ...form, apellido: cleanPersonName(event.target.value) })} placeholder="Apellido" />
             </Field>
             <Field label="Correo" wide>
               <input required autoComplete="email" className="field" type="email" value={form.correo} onChange={(event) => setForm({ ...form, correo: event.target.value })} placeholder="correo@ejemplo.com" />

@@ -1,11 +1,18 @@
 package com.integrador.orders;
 
+import com.microsoft.sqlserver.jdbc.SQLServerDataTable;
+import com.microsoft.sqlserver.jdbc.SQLServerPreparedStatement;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -128,73 +135,22 @@ public class OrderService {
 
         Map<Integer, Integer> requestedQuantities = normalizeRequestedQuantities(requestItems);
 
-        double subtotal = 0;
-        double totalDescuento = 0;
-        List<Map<String, Object>> normalized = new ArrayList<>();
-        for (Map.Entry<Integer, Integer> requested : requestedQuantities.entrySet()) {
-            int productId = requested.getKey();
-            int qty = requested.getValue();
-            List<Map<String, Object>> productRows = jdbc.queryForList(
-                    "SELECT id_tienda, nombre, estado, stock, precio, descuento_porcentaje, descuento_inicio, descuento_fin " +
-                            "FROM producto WITH (UPDLOCK, ROWLOCK) WHERE id_producto = ?",
-                    productId
-            );
-            if (productRows.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Uno de los productos ya no esta disponible");
-            }
-            Map<String, Object> product = productRows.get(0);
-            if (Utils.intValue(product.get("id_tienda"), 0) != idTienda || Utils.intValue(product.get("estado"), 0) != 1) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Todos los productos deben estar activos y pertenecer a la tienda");
-            }
-            int stock = Utils.intValue(product.get("stock"), 0);
-            if (qty > stock) {
-                String productName = Utils.stringValue(product.get("nombre"), "este producto");
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "No hay stock suficiente de " + productName + ". Disponibles: " + stock
-                );
-            }
-            double price = Utils.doubleValue(product.get("precio"), 0);
-            double discountPercentage = descuentoActivo(product)
-                    ? Utils.doubleValue(product.get("descuento_porcentaje"), 0)
-                    : 0;
-            double discount = Utils.roundMoney(price * discountPercentage / 100.0);
-            double lineSubtotal = Utils.roundMoney((price - discount) * qty);
-            subtotal += price * qty;
-            totalDescuento += discount * qty;
-            Map<String, Object> line = new HashMap<>();
-            line.put("id_producto", productId);
-            line.put("cantidad", qty);
-            line.put("precio_unitario", price);
-            line.put("descuento_unitario", discount);
-            line.put("subtotal", lineSubtotal);
-            normalized.add(line);
-        }
-        subtotal = Utils.roundMoney(subtotal);
-        totalDescuento = Utils.roundMoney(totalDescuento);
-        double total = Utils.roundMoney(subtotal - totalDescuento);
         double costoEnvio = "delivery".equals(tipo)
                 ? calcularCostoEnvio(idTienda, idUbicacionEntrega)
                 : 0;
 
-        int idPedido = jdbc.queryForObject(
-                "INSERT INTO pedido (id_usuario, id_tienda, id_estado_pedido, id_ubicacion_entrega, tipo_pedido, subtotal, total_descuento, costo_envio, total) " +
-                        "OUTPUT INSERTED.id_pedido VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
-                Integer.class,
-                idUsuario, idTienda, idUbicacionEntrega, tipo, subtotal, totalDescuento, costoEnvio, total
-        );
-        for (Map<String, Object> item : normalized) {
-            jdbc.update("INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario, descuento_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
-                    idPedido, item.get("id_producto"), item.get("cantidad"), item.get("precio_unitario"), item.get("descuento_unitario"), item.get("subtotal"));
-            int updated = jdbc.update(
-                    "UPDATE producto SET stock = stock - ? WHERE id_producto = ? AND stock >= ?",
-                    item.get("cantidad"),
-                    item.get("id_producto"),
-                    item.get("cantidad")
+        int idPedido;
+        try {
+            idPedido = registrarPedidoConProcedimiento(
+                    idUsuario,
+                    idTienda,
+                    idUbicacionEntrega,
+                    tipo,
+                    costoEnvio,
+                    requestedQuantities
             );
-            if (updated == 0) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "El stock cambio mientras confirmabas el pedido");
-            }
+        } catch (DataAccessException error) {
+            throw traducirErrorSqlPedido(error);
         }
         return pedido(idPedido);
     }
@@ -468,6 +424,96 @@ public class OrderService {
                         "WHERE dp.id_pedido = ?",
                 idPedido
         );
+    }
+
+    private int registrarPedidoConProcedimiento(
+            int idUsuario,
+            int idTienda,
+            int idUbicacionEntrega,
+            String tipo,
+            double costoEnvio,
+            Map<Integer, Integer> requestedQuantities
+    ) {
+        return jdbc.execute((ConnectionCallback<Integer>) connection -> {
+            SQLServerDataTable detalle = new SQLServerDataTable();
+            detalle.addColumnMetadata("id_producto", Types.INTEGER);
+            detalle.addColumnMetadata("cantidad", Types.INTEGER);
+            for (Map.Entry<Integer, Integer> item : requestedQuantities.entrySet()) {
+                detalle.addRow(item.getKey(), item.getValue());
+            }
+
+            String sql = "DECLARE @id_pedido_generado INT; " +
+                    "EXEC dbo.SP_Registrar_Pedido " +
+                    "@id_usuario = ?, " +
+                    "@id_tienda = ?, " +
+                    "@id_ubicacion_entrega = ?, " +
+                    "@tipo_pedido = ?, " +
+                    "@costo_envio = ?, " +
+                    "@detalle = ?, " +
+                    "@id_pedido_generado = @id_pedido_generado OUTPUT;";
+
+            try (SQLServerPreparedStatement statement =
+                         connection.prepareStatement(sql).unwrap(SQLServerPreparedStatement.class)) {
+                statement.setInt(1, idUsuario);
+                statement.setInt(2, idTienda);
+                statement.setInt(3, idUbicacionEntrega);
+                statement.setString(4, tipo);
+                statement.setBigDecimal(5, BigDecimal.valueOf(Utils.roundMoney(costoEnvio)));
+                statement.setStructured(6, "dbo.TipoDetallePedido", detalle);
+
+                boolean hasResultSet = statement.execute();
+                while (true) {
+                    if (hasResultSet) {
+                        try (ResultSet result = statement.getResultSet()) {
+                            if (result.next()) {
+                                return result.getInt("id_pedido");
+                            }
+                        }
+                    } else if (statement.getUpdateCount() == -1) {
+                        break;
+                    }
+                    hasResultSet = statement.getMoreResults();
+                }
+            }
+
+            throw new IllegalStateException("SP_Registrar_Pedido no devolvio el pedido generado");
+        });
+    }
+
+    private ResponseStatusException traducirErrorSqlPedido(DataAccessException error) {
+        String message = mensajeRaiz(error);
+        if (message.contains("Stock insuficiente")) {
+            return new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "No hay stock suficiente para confirmar el pedido",
+                    error
+            );
+        }
+        if (message.contains("530")) {
+            return new ResponseStatusException(HttpStatus.BAD_REQUEST, limpiarMensajeSql(message), error);
+        }
+        return new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "No pudimos registrar el pedido",
+                error
+        );
+    }
+
+    private String limpiarMensajeSql(String message) {
+        int marker = message.indexOf("SQL Server");
+        return marker >= 0 ? message.substring(marker).replace("SQL Server", "").trim() : message;
+    }
+
+    private String mensajeRaiz(Throwable error) {
+        Throwable current = error;
+        String message = "";
+        while (current != null) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                message = current.getMessage();
+            }
+            current = current.getCause();
+        }
+        return message;
     }
 
     static Map<Integer, Integer> normalizeRequestedQuantities(List<Map<String, Object>> requestItems) {

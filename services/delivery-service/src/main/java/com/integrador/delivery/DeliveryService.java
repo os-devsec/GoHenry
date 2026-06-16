@@ -1,5 +1,6 @@
 package com.integrador.delivery;
 
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -91,38 +92,19 @@ public class DeliveryService {
     @Transactional
     public Map<String, Object> aceptar(int id, Map<String, Object> user) {
         int idUsuario = claimDeliveryUser(id, user);
-        int updated = jdbc.update(
-                "UPDATE asignacion_repartidor " +
-                        "SET id_usuario = ?, estado_asignacion = 'aceptada', fecha_aceptacion = CURRENT_TIMESTAMP " +
-                        "WHERE id_asignacion = ? " +
-                        "AND estado_asignacion = 'pendiente' " +
-                        "AND NOT EXISTS ( " +
-                        "  SELECT 1 " +
-                        "  FROM asignacion_repartidor other " +
-                        "  WHERE other.id_pedido = asignacion_repartidor.id_pedido " +
-                        "    AND other.id_asignacion <> asignacion_repartidor.id_asignacion " +
-                        "    AND other.estado_asignacion IN ('aceptada', 'en_camino', 'entregada') " +
-                        ")",
-                idUsuario,
-                id
-        );
-        if (updated == 0) {
+        List<Map<String, Object>> result;
+        try {
+            result = jdbc.queryForList(
+                    "EXEC dbo.SP_Aceptar_Asignacion @id_asignacion = ?, @id_repartidor = ?",
+                    id,
+                    idUsuario
+            );
+        } catch (DataAccessException error) {
+            throw traducirErrorSqlAsignacion(error);
+        }
+        if (!result.isEmpty() && result.get(0).containsKey("aceptada") && !Utils.boolValue(result.get(0).get("aceptada"))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "La entrega ya fue tomada o no esta pendiente");
         }
-        Map<String, Object> entrega = jdbc.queryForMap(
-                "SELECT ar.id_pedido, p.costo_envio " +
-                        "FROM asignacion_repartidor ar " +
-                        "JOIN pedido p ON p.id_pedido = ar.id_pedido " +
-                        "WHERE ar.id_asignacion = ?",
-                id
-        );
-        double monto = Utils.doubleValue(entrega.get("costo_envio"), 0);
-        jdbc.update(
-                "INSERT INTO comision (id_usuario, id_pedido, monto, estado_comision) VALUES (?, ?, ?, 'pendiente')",
-                idUsuario,
-                Utils.intValue(entrega.get("id_pedido"), 0),
-                monto
-        );
         return asignacion(id);
     }
 
@@ -257,5 +239,28 @@ public class DeliveryService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "La entrega ya pertenece a otro repartidor");
         }
         return currentUserId;
+    }
+
+    private ResponseStatusException traducirErrorSqlAsignacion(DataAccessException error) {
+        String message = mensajeRaiz(error);
+        if (message.contains("53502")) {
+            return new ResponseStatusException(HttpStatus.CONFLICT, "Ya tienes una entrega activa", error);
+        }
+        if (message.contains("53501")) {
+            return new ResponseStatusException(HttpStatus.FORBIDDEN, "Activa modo delivery para aceptar entregas", error);
+        }
+        return new ResponseStatusException(HttpStatus.CONFLICT, "La entrega ya fue tomada o no esta pendiente", error);
+    }
+
+    private String mensajeRaiz(Throwable error) {
+        Throwable current = error;
+        String message = "";
+        while (current != null) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                message = current.getMessage();
+            }
+            current = current.getCause();
+        }
+        return message;
     }
 }
