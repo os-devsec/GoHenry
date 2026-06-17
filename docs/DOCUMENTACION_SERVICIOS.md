@@ -8,6 +8,9 @@ La documentacion se divide por capa:
   errores, build y publicacion.
 - [Backend](BACKEND.md): gateway, microservicios, endpoints, seguridad, stock,
   RDS, Docker y despliegue.
+- [Detalle tecnico minucioso](DETALLE_TECNICO_MINUCIOSO.md): archivo por
+  archivo, queries, vistas, procedimientos, flujos frontend/backend, Dockerfiles
+  y Docker Compose.
 
 ## Arquitectura general
 

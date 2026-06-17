@@ -62,3 +62,4 @@ archivos.
 - [Indice y arquitectura](docs/DOCUMENTACION_SERVICIOS.md)
 - [Frontend](docs/FRONTEND.md)
 - [Backend](docs/BACKEND.md)
+- [Detalle tecnico minucioso](docs/DETALLE_TECNICO_MINUCIOSO.md)
