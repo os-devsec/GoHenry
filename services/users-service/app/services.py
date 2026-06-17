@@ -37,8 +37,8 @@ def create_or_get_internal_user(session: Session, payload: InternalUserRequest) 
     )
     created = repositories.create_user(
         session,
-        nombre=payload.nombre or "",
-        apellido=payload.apellido or "",
+        nombre=payload.nombre,
+        apellido=payload.apellido,
         correo=str(payload.correo),
         telefono=payload.telefono,
         password_hash=hash_password(payload.password or ""),
@@ -80,8 +80,8 @@ def create_platform_admin(
     )
     created = repositories.create_user(
         session,
-        nombre=payload.nombre or "",
-        apellido=payload.apellido or "",
+        nombre=payload.nombre,
+        apellido=payload.apellido,
         correo=str(payload.correo),
         telefono=payload.telefono,
         password_hash=hash_password(payload.password or ""),

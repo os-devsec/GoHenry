@@ -223,7 +223,7 @@ def has_store_role(session: Session, id_tienda: int, id_usuario: int, roles: set
                 StoreStaff.id_tienda == id_tienda,
                 StoreStaff.id_usuario == id_usuario,
                 StoreStaff.cargo.in_(roles),
-                StoreStaff.estado == True,  # noqa: E712
+                StoreStaff.estado == True,  
             )
         ).first()
         is not None
@@ -232,7 +232,7 @@ def has_store_role(session: Session, id_tienda: int, id_usuario: int, roles: set
 
 def list_store_staff(session: Session, id_tienda: int) -> list[StoreStaff]:
     return session.exec(
-        select(StoreStaff).where(StoreStaff.id_tienda == id_tienda, StoreStaff.estado == True)  # noqa: E712
+        select(StoreStaff).where(StoreStaff.id_tienda == id_tienda, StoreStaff.estado == True)
     ).all()
 
 
@@ -242,7 +242,7 @@ def list_user_store_staff(session: Session, id_usuario: int) -> list[dict[str, A
         .join(Tienda, Tienda.id_tienda == StoreStaff.id_tienda)
         .where(
             StoreStaff.id_usuario == id_usuario,
-            StoreStaff.estado == True,  # noqa: E712
+            StoreStaff.estado == True,  
         )
         .order_by(Tienda.nombre)
     ).all()
