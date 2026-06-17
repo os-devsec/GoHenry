@@ -11,9 +11,6 @@ export default function Shell({ children }) {
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-950">
-      <a href="#contenido-principal" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-maize-300 focus:px-4 focus:py-2 focus:font-black focus:text-wine-900">
-        Saltar al contenido
-      </a>
       <header className="sticky top-0 z-40 border-b border-wine-100 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link to="/" aria-label="Ir al inicio de GoHenryGo" className="flex items-center gap-2 font-black text-wine-700">
